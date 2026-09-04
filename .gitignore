@@ -1,0 +1,380 @@
+# ============================================================
+# General / OS
+# ============================================================
+
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor temporary files
+*~
+*.swp
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.lock
+.lock-wscript
+
+# IDEs
+.idea/
+.vscode/
+
+# Version control
+.hg/
+.svn/
+
+
+# ============================================================
+# Lab / Project-Specific
+# ============================================================
+
+lab_grading/
+student_labs/
+
+# EECS 441 binaries
+chatterd/chatterd
+chatterd/*/chatterd
+harnessd/harnessd
+harnessd/*/harnessd
+
+
+# ============================================================
+# Databases
+# ============================================================
+
+*.db*
+db.sqlite3
+db.sqlite3-journal
+
+
+# ============================================================
+# Build / Output
+# ============================================================
+
+build/
+obj/
+dist/
+out/
+bin/
+pkg/
+target/
+logs/
+
+*.log
+*.tgz
+*.zip
+
+
+# ============================================================
+# Media
+# ============================================================
+
+*.mp4
+*.mp3
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+*.ico
+*.pdf
+
+
+# ============================================================
+# Apple / Xcode / Swift / iOS
+# ============================================================
+
+# Xcode build data
+DerivedData/
+
+# Xcode user-specific settings
+xcuserdata/
+*.xcuserstate
+*.xcuserdatad
+*.xcscmblueprint
+*.xccheckout
+*.moved-aside
+
+# Legacy Xcode user settings
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+
+# Xcode generated files
+*.hmap
+*.ipa
+*.dSYM
+*.dSYM.zip
+timeline.xctimeline
+
+# IMPORTANT:
+# Do NOT ignore *.xcodeproj or project.pbxproj.
+# These files should be committed to Git.
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Packages/
+Generated/
+
+# Keep Package.resolved tracked.
+# It is generally useful for reproducible application builds.
+
+# CocoaPods
+Pods/
+
+# Carthage
+Carthage/Checkouts/
+Carthage/Build/
+
+# Other dependency managers
+Dependencies/
+.accio/
+
+# Playgrounds
+playground.xcworkspace
+
+# Fastlane generated output
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/
+fastlane/test_output/
+
+# iOS Injection
+iOSInjectionProject/
+
+
+# ============================================================
+# Python
+# ============================================================
+
+# Virtual environments
+.venv/
+venv/
+venv3/
+env/
+ENV/
+.uv/
+
+# Bytecode / caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+cython_debug/
+
+# Python packaging
+.Python
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+
+*.egg-info/
+*.egg
+.installed.cfg
+
+MANIFEST
+*.manifest
+*.spec
+
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Testing / coverage
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache/
+nosetests.xml
+coverage.xml
+coverage/
+lib-cov/
+*.lcov
+*.cover
+*.py,cover
+htmlcov/
+
+# Framework / tool generated
+local_settings.py
+instance/
+.webassets-cache/
+.scrapy/
+docs/_build/
+.ipynb_checkpoints/
+profile_default/
+ipython_config.py
+.python-version
+.pdm.toml
+__pypackages__/
+celerybeat-schedule
+celerybeat.pid
+*.sage.py
+.spyderproject
+.spyproject
+/site
+
+
+# ============================================================
+# Node / TypeScript / JavaScript
+# ============================================================
+
+node_modules/
+
+# Package manager caches
+.npm/
+.yarn*
+.pnp.*
+jspm_packages/
+web_modules/
+
+# Build outputs
+.next/
+.nuxt/
+.vuepress/dist/
+.temp/
+.docusaurus/
+.serverless/
+.fusebox/
+.dynamocdb/
+.parcel-cache/
+
+# TypeScript
+*.tsbuildinfo
+
+# Linting
+.eslintcache
+.stylelintcache
+
+# Misc Node tooling
+.rpt2_cache/
+.rts2_cache_*/
+.node_repl_history
+.tern-port
+.nyc_output/
+.grunt/
+
+pids/
+*.pid
+*.seed
+
+# Bun
+bun.lockb
+
+
+# ============================================================
+# Android / Kotlin / Java
+# ============================================================
+
+.gradle/
+*/build/
+captures/
+
+.externalNativeBuild/
+.cxx/
+
+local.properties
+
+*.iml
+*.iws
+*.ipr
+
+.idea/caches/
+.idea/modules/
+
+*.apk
+*.aar
+*.ap_
+*.aab
+*.dex
+*.class
+
+gen/
+release/
+proguard/
+
+*/production/
+
+.navigation/
+
+freeline.py
+freeline/
+freeline_project_description.json
+
+vcs.xml
+lint/
+
+*.hprof
+.kotlin/
+*.ctxt
+.mtj.tmp/
+
+*.jar
+*.war
+*.nar
+*.ear
+
+hs_err_pid*
+
+
+# ============================================================
+# Rust
+# ============================================================
+
+**/*.rs.bk
+*.pdb
+.cargo/
+
+
+# ============================================================
+# Go
+# ============================================================
+
+*.exe~
+*.dll
+*.dylib
+*.test
+go.work
+
+
+# ============================================================
+# Dependencies / Vendor
+# ============================================================
+
+bower_components/
+vendor/
+
+
+# ============================================================
+# Environment / Secrets
+# ============================================================
+
+.env
+.env.*
