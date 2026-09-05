@@ -378,3 +378,4 @@ vendor/
 
 .env
 .env.*
+.Rhistory
