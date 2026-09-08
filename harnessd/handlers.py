@@ -15,7 +15,7 @@ class Message(Struct, omit_defaults=True):
 class OpenAIRequest(Struct, omit_defaults=True):
 	model: str
 	messages: Raw
-	stream: bool = false
+	stream: bool = False
 
 logger = logging.getLogger("runner")
 logging.basicConfig(level=logging.INFO)
