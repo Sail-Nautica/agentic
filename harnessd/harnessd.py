@@ -3,7 +3,7 @@ from pathlib import Path
 
 if __name__ == '__main__':
 	Server(
-		"main::app",
+		"main:app",
 		address="0.0.0.0",
 		port=443,
 		interface="asgi",
