@@ -52,7 +52,7 @@ async def llmprompt(request: Request):
             "All available LLM providers are rate limited or offline.")
         
     # pass upstream body straight through.
-    return StreamingResponse(response.aiter_raw(), 
+    return StreamingResponse(response.aiter_bytes(), 
         headers= { "Content-Type": "text/event-stream" },
         background=BackgroundTask(response.aclose))
         
