@@ -1,6 +1,6 @@
 from http import HTTPStatus
-import hpptx
-from hpptx import RequestError, Response
+import httpx
+from httpx import RequestError, Response
 import logging
 import msgspec
 from msgspec import Raw, Struct, field, json, structs
