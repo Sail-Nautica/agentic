@@ -19,7 +19,7 @@ class OpenAIRequest(Struct, omit_defaults=True):
 
 logger = logging.getLogger("runner")
 logging.basicConfig(level=logging.INFO)
-logging.getLogger("hpptx").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 def _logOk(clientIP: str, runner: str, model: str):
     logger.info(f"{clientIP} | {runner}:{model}")
@@ -78,7 +78,7 @@ async def _routePrompt(request: Request, openAIRequest: OpenAIRequest) -> Respon
                 # client.build_request allows us to stream the response safely
                 client.build_request(
                     method=request.method,
-                    url=f"{runner.api.url}/v1/chat/completions",
+                    url=f"{runner.api.url}/chat/completions",
                     headers=headers,
                     content=json.encode(requestBody),
                 ), stream=True)

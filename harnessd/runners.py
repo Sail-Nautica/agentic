@@ -8,7 +8,7 @@ from pathlib import Path
 import random
 import sys
 
-RUNNERS_CONFIG = "/home/ubuntu/agentic/runners.toml"
+RUNNERS_CONFIG = Path(os.environ.get("RUNNERS_CONFIG") or Path(__file__).resolve().parent.parent / "runners.toml")
 
 class LlmRunnerAPI(Struct):
     url: str
@@ -55,10 +55,7 @@ class LlmRunners:
         print(f"Reading {RUNNERS_CONFIG}")
         
         # ingest runners config file
-        try:
-            toml_bytes = Path(RUNNERS_CONFIG).read_bytes()
-        except FileNotFoundError:
-            raise ValueError(f"Config file not found at {RUNNERS_CONFIG}")
+        toml_bytes = Path(RUNNERS_CONFIG).read_bytes()
             
         rawRunners = msgspec.toml.decode(toml_bytes, type=RawRunners)
     
