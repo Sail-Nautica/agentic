@@ -7,6 +7,8 @@ import handlers
 from runners import LlmRunners
 
 routes = [
+	# TODO(graded): comment out this '/' route before submission so it returns 404.
+	# Route('/', handlers.top, methods=['GET']),
 	Route('/llmprompt', handlers.llmprompt, methods=['POST']),
 ]
 

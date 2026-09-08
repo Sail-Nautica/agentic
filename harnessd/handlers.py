@@ -6,7 +6,7 @@ import msgspec
 from msgspec import Raw, Struct, field, json, structs
 from starlette.background import BackgroundTask
 from starlette.requests import Request
-from starlette.responses import PlainTextResponse, StreamingResponse
+from starlette.responses import PlainTextResponse, Response, StreamingResponse
 
 class Message(Struct, omit_defaults=True):
 	role: str
@@ -30,6 +30,13 @@ def _logInfo(clientIP: str, runner: str, model: str, errcode: int, msg: str):
 def _logClientErr(clientIP: str, errcode: HTTPStatus, errmsg: str) -> PlainTextResponse:
     logger.warning(f"{errcode.value} | {clientIP} |")
     return PlainTextResponse(status_code=errcode, content=errmsg)
+
+# Setup-verification endpoint. Encoded once at import: the payload is constant,
+# so there is nothing to serialize per request.
+TOP = json.encode({"message": "UM EECS agentic harnessd"})
+
+async def top(request: Request):
+    return Response(TOP, media_type="application/json")
 
 async def llmprompt(request: Request):
     clientIP = request.client.host if request.client else "Unknown"
