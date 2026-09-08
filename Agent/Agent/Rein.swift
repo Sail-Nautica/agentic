@@ -1,8 +1,16 @@
 import SwiftUI
 
+//Personal Phone
+//private let harness = "https://34.16.51.43"
+//private let api = "/llmprompt"
+//private let model = "gemini-3.6-flash"
+
+//Class
 private let harness = "https://mada.eecs.umich.edu"
 private let api = "/llmprompt"
 private let model = "gemma4:e4b"
+
+
 private let showThinking = true
 
 struct Message: Encodable {
