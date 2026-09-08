@@ -13,4 +13,4 @@ routes = [
 app = Starlette(routes = routes)
 
 app.state.runners = LlmRunners()
-app.state.client = AsyncClient(timeoute = Timeout(connect=5.0, read=None, write=None, pool=None), http2=True)
+app.state.client = AsyncClient(timeout = Timeout(connect=5.0, read=None, write=None, pool=None), http2=True)

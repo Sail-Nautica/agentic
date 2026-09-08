@@ -1,0 +1,34 @@
+# `key` is the NAME of the env var holding the API key, not the key itself.
+# `url` is the base WITHOUT the version segment: handlers.py appends
+# "/v1/chat/completions" itself.
+[apis.groq]
+url = "https://api.groq.com/openai"
+key = "GROQ_API_KEY"
+
+[apis.mistral]
+url = "https://api.mistral.ai"
+key = "MISTRAL_API_KEY"
+
+[apis.cerebras]
+url = "https://api.cerebras.ai"
+key = "CEREBRAS_API_KEY"
+
+[apis.openrouter]
+url = "https://openrouter.ai/api"
+key = "OPENROUTER_API_KEY"
+
+# "local" is special-cased: active with no env var as long as `url` is
+# non-empty, and appended as the last-resort fallback.
+[apis.local]
+url = "https://localhost:11433"
+key = ""
+
+[[runners]]
+api = "groq"
+model = "llama-3.3-70b-versatile"
+weight = 0.8
+
+[[runners]]
+api = "mistral"
+model = "mistral-large-latest"
+weight = 0.6
