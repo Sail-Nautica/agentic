@@ -2,13 +2,16 @@ import SwiftUI
 
 //Personal Phone
 //private let harness = "https://34.16.51.43"
-//private let api = "/llmprompt"
+//private let api = "/llmchat"
 //private let model = "gemini-3.6-flash"
+//private let appID = Bundle.main.bundleIdentifier
+
 
 //Class
-private let harness = "https://mada.eecs.umich.edu"
-private let api = "/llmprompt"
+private let harness = "https://mada.eecs.umich.edu"  
+private let api = "/llmchat"
 private let model = "gemma4:e4b"
+private let appID = Bundle.main.bundleIdentifier
 
 
 private let showThinking = true
@@ -28,6 +31,8 @@ struct OpenAIRequest: Encodable {
     //let max_tokens = 8192 // some models require it
     let messages: [Message]
     let stream = true       // always streaming
+    let appID: String?
+
 }
 
 struct OpenAIResponse: Decodable {
@@ -70,12 +75,13 @@ struct Rein {
 
         // prepare request
 
-        let OpenAIRequest = OpenAIRequest(
+        let openAIRequest = OpenAIRequest(
             model: model,
             messages: messages,
+            appID: appID,
         )
 
-        let request = Result { try prepareRequest(harnessApi, OpenAIRequest)}
+        let request = Result { try prepareRequest(harnessApi, openAIRequest)}
         guard case .success(let request) = request else {
             if case .failure(let error) = request {
                 errMsg.wrappedValue = "Prepare request failed \(error)"
