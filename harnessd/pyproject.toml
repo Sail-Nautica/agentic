@@ -3,9 +3,11 @@ name = "harnessd"
 version = "0.1.0"
 requires-python = ">=3.14"
 dependencies = [
+    "aiosqlite>=0.22.1",
     "granian>=2.8.2",
     "httpx[http2]>=0.28.1",
     "msgspec>=0.21.1",
+    "sse-starlette>=3.4.11",
     "starlette>=1.6.0",
     "uvloop>=0.22.1",
 ]
