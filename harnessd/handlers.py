@@ -19,12 +19,12 @@ class Message(Struct, omit_defaults=True):
 	content: str | None
 
 class OpenAIRequest(Struct, omit_defaults=True):
-    appID:    str | UnsetType
+	appID:    str | UnsetType
 	model: str
 	messages: Raw
 	stream: bool = False
- 
- class OpenAIDelta(Struct):
+
+class OpenAIDelta(Struct):
     content:           str | None = None
     reasoning:         str | None = None
     reasoning_content: str | None = None
@@ -255,7 +255,7 @@ async def _yieldSse(
                                 accReasoning(delta.reasoning_content)
                             elif delta.reasoning:
                                 accReasoning(delta.reasoning)
-                    except Exception:
+                    except Exception as e:
                         yield {"event": "error", "data": json.encode(str(e)).decode()}
 
                     # convey LLM completion stream to client:

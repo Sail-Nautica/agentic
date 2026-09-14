@@ -11,18 +11,6 @@ import asyncio
 from contextlib import asynccontextmanager
 import sys
 
-routes = [
-	# TODO(graded): comment out this '/' route before submission so it returns 404.
-	# Route('/', handlers.top, methods=['GET']),
-	Route('/llmprompt', handlers.llmprompt, methods=['POST']),
-    Route('/llmchat', handlers.llmchat, methods=['POST']),
-]
-
-app = Starlette(routes=routes, lifespan=lifespan)
-
-app.state.runners = LlmRunners()
-app.state.client = AsyncClient(timeout = Timeout(connect=5.0, read=None, write=None, pool=None), http2=True)
-
 HARNESS_DB_PATH = "/home/ubuntu/agentic/harnessd/harnessd.db"
 
 @asynccontextmanager
@@ -37,7 +25,7 @@ async def lifespan(app: Starlette):
         PRAGMA cache_size = -32000;     -- 32 MB
         PRAGMA mmap_size = 0;
         PRAGMA synchronous = NORMAL;
-        PRAGMA journal_size_limit = 104857600; -- 100 MB        
+        PRAGMA journal_size_limit = 104857600; -- 100 MB
         PRAGMA temp_store = MEMORY;
         PRAGMA wal_autocheckpoint = 0;
     """)
@@ -48,12 +36,12 @@ async def lifespan(app: Starlette):
     await waldb.executescript("""
         PRAGMA busy_timeout = 5000;     -- 5 secs
         PRAGMA synchronous = NORMAL;
-        PRAGMA journal_size_limit = 104857600; -- 100 MB        
-        PRAGMA wal_autocheckpoint = 0;        
+        PRAGMA journal_size_limit = 104857600; -- 100 MB
+        PRAGMA wal_autocheckpoint = 0;
     """)
 
     task = asyncio.create_task(waloop(waldb))
-    
+
     # graceful shutdown
     try:
         yield
@@ -72,19 +60,31 @@ async def waloop(waldb: aiosqlite.Connection):
         try:
             # query plan analyzer optimization
             await waldb.execute("PRAGMA optimize=0x10002")
-            
+
             # PASSIVE reuses flushed WAL blocks, file grows to high-water mark
             # PRAGMA journal_size_limit handles automatic OS file truncation
             await waldb.execute("PRAGMA wal_checkpoint(PASSIVE)")
-            
+
             # gate incremental vacuum by actual db freelist
             async with waldb.cursor() as cur:
                 await cur.execute("PRAGMA freelist_count")
                 row = await cur.fetchone()
-                
+
             if row is not None and row[0] > 25600:
                 # 100 MB freePages for HDD, can lower to 20 MB (5120 pages) for SDD
                 # reclaim unused pages in batches (of 256) so as not to freeze the db
                 await waldb.execute("PRAGMA incremental_vacuum(256)")
         except Exception as e:
             print(f"SQLite checkpointing or optimization failed: {e}", file=sys.stderr)
+
+routes = [
+	# TODO(graded): comment out this '/' route before submission so it returns 404.
+	# Route('/', handlers.top, methods=['GET']),
+	Route('/llmprompt', handlers.llmprompt, methods=['POST']),
+	Route('/llmchat', handlers.llmchat, methods=['POST']),
+]
+
+app = Starlette(routes=routes, lifespan=lifespan)
+
+app.state.runners = LlmRunners()
+app.state.client = AsyncClient(timeout = Timeout(connect=5.0, read=None, write=None, pool=None), http2=True)
