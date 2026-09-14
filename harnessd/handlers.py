@@ -148,7 +148,7 @@ async def llmchat(request: Request):
         async with rwdb.cursor() as cur:
             await cur.execute(
                 "INSERT INTO turns (appID, prompt) VALUES (?, ?)",
-                (openAIRequest.appID, # None, # for testing SSE error event
+                (None, # openAIRequest.appID, # for testing SSE error event
                     openAIRequest.messages),
             )
             turnID = cur.lastrowid
