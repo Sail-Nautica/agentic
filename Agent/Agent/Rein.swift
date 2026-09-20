@@ -1,17 +1,19 @@
 import SwiftUI
   
 //Personal Phone
-//private let harness = "https://34.16.51.43"
-//private let api = "/llmchat"
-//private let model = "gemini-3.6-flash"
-//private let appID = Bundle.main.bundleIdentifier
+private let harness = "https://34.16.51.43"
+private let api = "/llmchat"
+private let clearApi = "/llmclear"
+private let model = "gemini-3.6-flash"
+private let appID = Bundle.main.bundleIdentifier
 
 
 //Class
-private let harness = "https://mada.eecs.umich.edu"  
-private let api = "/llmchat"
-private let model = "gemma4:e4b"
-private let appID = Bundle.main.bundleIdentifier
+//private let harness = "https://mada.eecs.umich.edu"		
+//private let api = "/llmchat"
+//private let clearApi = "/llmclear"
+//private let model = "gemma4:e4b"
+//private let appID = Bundle.main.bundleIdentifier
 
 
 private let showThinking = true
@@ -108,7 +110,35 @@ struct Rein {
             errMsg.wrappedValue = "SSE parsing failed \(error)"
         }
 
-    }  
+    }
+
+    // reuses OpenAIRequest so /llmclear introduces no new message format
+    func llmClear(errMsg: Binding<String>) async {
+        guard let harnessApi = URL(string: "\(harness)\(clearApi)") else {
+            errMsg.wrappedValue = "Bad harness URL \(harness)\(clearApi)"
+            return
+        }
+
+        let openAIRequest = OpenAIRequest(model: model, messages: [], appID: appID)
+
+        let request = Result { try prepareRequest(harnessApi, openAIRequest) }
+        guard case .success(let request) = request else {
+            if case .failure(let error) = request {
+                errMsg.wrappedValue = "Prepare request failed \(error)"
+            }
+            return
+        }
+
+        let response = await Result { try await URLSession.shared.data(for: request) }
+        switch response {
+        case .success(let (_, response)):
+            if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+                errMsg.wrappedValue = "\(http.statusCode): \(HTTPURLResponse.localizedString(forStatusCode: http.statusCode))"
+            }
+        case .failure(let error):
+            errMsg.wrappedValue = "Connect to harness failed \(error)"
+        }
+    }
 
     private func prepareRequest(_ harnessApi: URL, _ payload: OpenAIRequest) throws -> URLRequest {
         let requestBody = try JSONEncoder().encode(payload)

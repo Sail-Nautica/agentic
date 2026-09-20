@@ -192,7 +192,24 @@ async def llmchat(request: Request):
 
     return EventSourceResponse(_conveyCompletion(response),
         headers= { "Content-Type": "text/event-stream" })
-        
+
+async def llmclear(request: Request):
+    clientIP = request.client.host if request.client else "Unknown"
+    try:
+        openAIRequest = json.decode(await request.body(), type=OpenAIRequest)
+    except Exception:
+        return _logClientErr(clientIP, HTTPStatus.BAD_REQUEST, "Invalid JSON body.")
+
+    rwdb = request.app.state.rwdb
+    try:
+        async with rwdb.cursor() as cur:
+            await cur.execute("DELETE FROM turns WHERE appID = ?", (openAIRequest.appID,))
+    except Exception as e:
+        return _logClientErr(clientIP, HTTPStatus.INTERNAL_SERVER_ERROR, str(e))
+
+    _logOk(clientIP, "llmclear", openAIRequest.appID if isinstance(openAIRequest.appID, str) else "")
+    return PlainTextResponse(status_code=HTTPStatus.OK, content="")
+
 class SseAccumulator(Struct):
     reasoning:     list[str] = field(default_factory=list)
     tokens:        list[str] = field(default_factory=list)

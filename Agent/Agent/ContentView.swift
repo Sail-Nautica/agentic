@@ -7,55 +7,65 @@
 
 import SwiftUI
 
-//struct ContentView: View {
-//    var body: some View {
-//        VStack {
-//            Image(systemName: "globe")
-//                .imageScale(.large)
-//                .foregroundStyle(.tint)
-//            Text("Hello, world!")
-//        }
-//        .padding()
-//    }
-//}
-
 struct SubmitButton: View {
     @Environment(AppViewModel.self) private var vm
 
     @State private var isSending = false
-    
+
+    private var hasContent: Bool { !vm.systemPrompt.isEmpty || !vm.userPrompt.isEmpty }
+
     var body: some View {
         Button {
             isSending = true
-            
-            let chat = Chat(content: vm.message)
-            vm.conversation.append(chat)
-            
-            //Pass chat to harnes in an array
-            let messages = [Message(role: chat.role, content: chat.content)]
-            
-            //Create placeholder for stream response
-            let completion = Chat(role: "assistant", content: "", timestamp: "")
-            vm.conversation.append(completion)
-            
+
+            // fields persist until Send is clicked, then clear immediately
+            let system = vm.systemPrompt
+            let user = vm.userPrompt
+            vm.systemPrompt = ""
+            vm.userPrompt = ""
+
             Task(priority: .background) {
-                await vm.rein.llmPrompt(messages, completion: completion, errMsg: Bindable(vm).errMsg)
-                
-                // cleanup
-                vm.message = ""
+                await vm.sendTurn(system: system, user: user)
                 isSending = false
                 vm.showError = !vm.errMsg.isEmpty
             }
-            
+
         } label: {
             if isSending {
                 ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .secondary)).padding(10)
             } else {
-                Image(systemName: "paperplane.fill").foregroundColor(vm.message.isEmpty ? .gray: .yellow).padding(10)
+                Image(systemName: "paperplane.fill").foregroundColor(hasContent ? .yellow : .gray).padding(10)
             }
         }
-        .disabled(isSending || vm.message.isEmpty)
-        .background(Color(isSending || vm.message.isEmpty ? .secondarySystemBackground : .systemBlue))
+        .disabled(isSending || !hasContent)
+        .background(Color(isSending || !hasContent ? .secondarySystemBackground : .systemBlue))
+        .clipShape(Circle())
+        .padding(.trailing)
+    }
+}
+
+struct ClearButton: View {
+    @Environment(AppViewModel.self) private var vm
+
+    @State private var isClearing = false
+
+    var body: some View {
+        Button {
+            isClearing = true
+            Task(priority: .background) {
+                await vm.resetGame()
+                isClearing = false
+                vm.showError = !vm.errMsg.isEmpty
+            }
+        } label: {
+            if isClearing {
+                ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .secondary)).padding(10)
+            } else {
+                Image(systemName: "trash.fill").foregroundColor(.red).padding(10)
+            }
+        }
+        .disabled(isClearing)
+        .background(Color(.secondarySystemBackground))
         .clipShape(Circle())
         .padding(.trailing)
     }
@@ -64,27 +74,48 @@ struct SubmitButton: View {
 struct ContentView: View {
     @FocusState private var messageInFocus: Bool // tap background to dismiss
     @Environment(AppViewModel.self) private var vm
-    
+
     var body: some View {
         VStack {
+            Picker("Game", selection: Bindable(vm).game) {
+                ForEach(Game.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+            .onChange(of: vm.game) {
+                Task(priority: .background) { await vm.resetGame() }
+            }
+
             ConversationView()
-            
-            HStack(alignment: .bottom) {
-                TextField(vm.instruction, text: Bindable(vm).message)
+
+            VStack(spacing: 6) {
+                TextField(vm.systemInstruction, text: Bindable(vm).systemPrompt)
                     .focused($messageInFocus)
                     .textFieldStyle(.roundedBorder)
-                    .cornerRadius(20)
-                    .shadow(radius: 2)
-                    .backgroundStyle(Color(.clear))
-                    .border(Color(.clear))
-                SubmitButton()
+
+                HStack(alignment: .bottom) {
+                    TextField(vm.userInstruction, text: Bindable(vm).userPrompt)
+                        .focused($messageInFocus)
+                        .textFieldStyle(.roundedBorder)
+                        .cornerRadius(20)
+                        .shadow(radius: 2)
+                        .backgroundStyle(Color(.clear))
+                        .border(Color(.clear))
+                    ClearButton()
+                    SubmitButton()
+                }
             }
             .padding(EdgeInsets(top: 0, leading: 20, bottom: 8, trailing: 0))
         }
         .contentShape(.rect)
         .onTapGesture {messageInFocus.toggle()}
-        .navigationTitle("llmPrompt")
+        .navigationTitle(vm.game.rawValue)
         .navigationBarTitleDisplayMode(.inline)
+        .task {
+            // app-launch initialization: send the game rules before any user input
+            guard vm.conversation.isEmpty else { return }
+            await vm.sendTurn(system: vm.game.rules, user: "")
+        }
         .alert("LLM Error", isPresented: Bindable(vm).showError) {
                 Button("OK") {
                     vm.errMsg = ""
