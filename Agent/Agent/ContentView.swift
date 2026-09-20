@@ -27,7 +27,6 @@ struct SubmitButton: View {
             Task(priority: .background) {
                 await vm.sendTurn(system: system, user: user)
                 isSending = false
-                vm.showError = !vm.errMsg.isEmpty
             }
 
         } label: {
@@ -55,7 +54,6 @@ struct ClearButton: View {
             Task(priority: .background) {
                 await vm.resetGame()
                 isClearing = false
-                vm.showError = !vm.errMsg.isEmpty
             }
         } label: {
             if isClearing {

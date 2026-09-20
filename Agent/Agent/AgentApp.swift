@@ -69,11 +69,13 @@ final class AppViewModel {
         conversation.append(completion)
 
         await rein.llmPrompt(messages, completion: completion, errMsg: Bindable(self).errMsg)
+        showError = !errMsg.isEmpty
     }
 
     @MainActor
     func resetGame() async {
         await rein.llmClear(errMsg: Bindable(self).errMsg)
+        showError = !errMsg.isEmpty
         conversation.removeAll()
         await sendTurn(system: game.rules, user: "")
     }
