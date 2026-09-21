@@ -54,6 +54,7 @@ final class AppViewModel {
     // shared by SubmitButton and by game init/reset: empty fields omit their role's message
     @MainActor
     func sendTurn(system: String, user: String) async {
+        errMsg = "" // avoid re-surfacing a stale error left over from a dismissed turn
         var messages: [Message] = []
 
         if !system.isEmpty {
