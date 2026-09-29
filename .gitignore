@@ -389,3 +389,11 @@ vendor/
 id_rsa*
 id_ed25519*
 *.kdbx
+
+
+# ============================================================
+# Project1 required root files (exceptions to the blanket rules above)
+# ============================================================
+
+!harnessd.crt
+!PROJECT1.pdf
