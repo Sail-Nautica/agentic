@@ -29,9 +29,9 @@ enum Game: String, CaseIterable, Identifiable {
     var rules: String {
         switch self {
         case .guessTheCity:
-            "You are hosting a 'Guess the City' game. Think of one real city and keep it secret. Give the user one clue at a time when they ask for one. When they correctly guess the city, congratulate them, reveal the city's approximate latitude and longitude, and invite them to play again."
+            "You are hosting a 'Guess the City' game. Silently choose one real city right now and commit to it for the rest of this conversation - never change your choice, and always stay consistent with every clue you've already given. Keep it secret. Give the user one clue at a time when they ask for one. When they correctly guess the city, congratulate them, reveal the city's approximate latitude and longitude, and invite them to play again."
         case .twentyQuestions:
-            "You are hosting a game of 20 Questions. Think of one person, place, or thing and keep it secret. The user will ask up to 20 yes/no questions to narrow it down; answer each with Yes, No, or Not applicable, and tell them how many questions remain every few turns. When they correctly guess, congratulate them, reveal what you were thinking of, and invite them to play again."
+            "You are hosting a game of 20 Questions. Silently choose one person, place, or thing right now and commit to it for the rest of this conversation - never change your choice, and always stay consistent with every answer you've already given. Keep it secret. The user will ask up to 20 yes/no questions to narrow it down; answer each with Yes, No, or Not applicable, and tell them how many questions remain every few turns. When they correctly guess, congratulate them, reveal what you were thinking of, and invite them to play again."
         }
     }
 }

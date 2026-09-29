@@ -9,14 +9,18 @@ private let appID = Bundle.main.bundleIdentifier
 
 
 //Class
-//private let harness = "https://mada.eecs.umich.edu"		
+//private let harness = "https://mada.eecs.umich.edu"
 //private let api = "/llmchat"
 //private let clearApi = "/llmclear"
 //private let model = "gemma4:e4b"
 //private let appID = Bundle.main.bundleIdentifier
 
 
-private let showThinking = true
+// a thinking model's reasoning can say the secret answer out loud before the
+// game's payoff turn; the backend already persists reasoning independently of
+// what's rendered here (handlers.py accumulates it server-side for replay),
+// so hiding it from the bubble doesn't affect the model's own memory of it
+private let showThinking = false
 
 struct Message: Encodable {
     let role: String
