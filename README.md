@@ -6,7 +6,7 @@ EECS 498-008. "Guess the City" / "20 Questions" LLM game, built on the llmPrompt
 
 Individual submission — one member.
 
-| Name      | Uniqname  | Email                  |
+| Name      | Uniqname  | Email                   |
 |-----------|-----------|-------------------------|
 | Amit Sail | amitsail  | amitsail@umich.edu      |
 
@@ -23,4 +23,4 @@ Regardless of assistance, I fully understand and can defend all code
 and design choices within this submission, and I have not concealed
 any violations of the Honor Code."
 
-Signed: AMIT SAIL &nbsp;&nbsp;&nbsp; Date: 2026-09-29
+Signed: AMIT SAIL Date: 2026-09-29

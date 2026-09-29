@@ -58,12 +58,27 @@ struct Delta: Decodable {
     let reasoning_content: String?
 }
 
-enum SseEvent { case Error, Message, Unknown } 
+enum SseEvent { case Error, Message, Unknown }
+
+// a fresh-per-turn state machine that buffers the start of a completion just
+// long enough to detect and strip a leading "[SECRET: ...]" marker before any
+// of it reaches the visible bubble - see stripSecretMarker
+enum SecretMarkerState {
+    case buffering(String)
+    case resolved
+}
 
 struct SseAccumulator {
     let completion: Chat
     let errMsg: Binding<String>
+    var secretMarker: SecretMarkerState = .buffering("")
 }
+
+// the game rules instruct the model to pin its answer in this marker on the
+// very first reply, before any other text; the marker is what /llmchat
+// persists and replays back to the model every later turn as its exact prior
+// commitment, so it never has to re-derive or drift from its own clues
+private let secretPrefix = "[SECRET:"
 
 private let Json = JSONDecoder()
 
@@ -229,7 +244,7 @@ struct Rein {
                         let openAIResponse = try Json.decode(OpenAIResponse.self, from: Data(tagline.utf8))
 
                         if let delta = openAIResponse.choices.first?.delta {
-                            let content = decoratedContent(from: delta)
+                            let content = decoratedContent(from: delta, &acc)
 
                             if !content.isEmpty {
                                 acc.completion.content.append(content)
@@ -280,11 +295,14 @@ struct Rein {
 
     }
 
-    private func decoratedContent(from delta: Delta) -> String {
+    private func decoratedContent(from delta: Delta, _ acc: inout SseAccumulator) -> String {
         if let content = delta.content.nilIfEmpty {
-            let result = Rein.isThinking ? "\n</think>\n\n" + content : content
+            let visible = stripSecretMarker(content, &acc.secretMarker)
+            guard !visible.isEmpty else { return "" }
+
+            let result = Rein.isThinking ? "\n</think>\n\n" + visible : visible
             Rein.isThinking = false
-            return result        
+            return result
         }
 
         if showThinking {
@@ -295,6 +313,48 @@ struct Rein {
             }
         }
 
+        return ""
+    }
+
+    // buffers the start of a completion until it can either confirm and strip
+    // a "[SECRET: ...]" marker, or confirm there isn't one and flush normally;
+    // a model that opens the marker but never closes it is capped at 120
+    // buffered characters, after which it's flushed through as ordinary text
+    private func stripSecretMarker(_ token: String, _ state: inout SecretMarkerState) -> String {
+        guard case .buffering(var buf) = state else { return token }
+        buf += token
+
+        let trimmed = buf.drop { $0 == " " || $0 == "\n" || $0 == "\t" }
+        guard !trimmed.isEmpty else {
+            state = .buffering(buf) // still all whitespace, keep waiting for the first real character
+            return ""
+        }
+
+        guard trimmed.count >= secretPrefix.count else {
+            if secretPrefix.hasPrefix(trimmed) {
+                state = .buffering(buf)
+                return ""
+            }
+            state = .resolved
+            return buf
+        }
+
+        guard trimmed.hasPrefix(secretPrefix) else {
+            state = .resolved
+            return buf
+        }
+
+        if let closeRange = trimmed.range(of: "]") {
+            state = .resolved
+            return String(trimmed[closeRange.upperBound...])
+        }
+
+        guard buf.count < 120 else {
+            state = .resolved
+            return buf
+        }
+
+        state = .buffering(buf)
         return ""
     }
 
