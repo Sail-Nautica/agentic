@@ -69,7 +69,7 @@ final class AppViewModel {
         let completion = Chat(role: "assistant", content: "", timestamp: "")
         conversation.append(completion)
 
-        await rein.llmPrompt(messages, completion: completion, errMsg: Bindable(self).errMsg)
+        await rein.llmTools(messages, completion: completion, errMsg: Bindable(self).errMsg)
         showError = !errMsg.isEmpty
     }
 
@@ -85,6 +85,10 @@ final class AppViewModel {
 @main
 struct AgentApp: App {
     let vm = AppViewModel()
+
+    init() {
+        LocManager.shared.startUpdates()
+    }
 
     var body: some Scene {
         WindowGroup {

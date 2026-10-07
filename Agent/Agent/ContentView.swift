@@ -107,7 +107,7 @@ struct ContentView: View {
         }
         .contentShape(.rect)
         .onTapGesture {messageInFocus.toggle()}
-        .navigationTitle(vm.game.rawValue)
+        .navigationTitle("llmTools")
         .navigationBarTitleDisplayMode(.inline)
         .task {
             // app-launch initialization: send the game rules before any user input

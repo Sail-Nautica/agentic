@@ -2,17 +2,17 @@ import SwiftUI
   
 //Personal Phone
 private let harness = "https://34.16.51.43"
-private let api = "/llmchat"
+private let api = "/llmtools"
 private let clearApi = "/llmclear"
-private let model = "gemini-3.6-flash"
+private let model = "qwen3.5:9b"
 private let appID = Bundle.main.bundleIdentifier
 
 
 //Class
 //private let harness = "https://mada.eecs.umich.edu"
-//private let api = "/llmchat"
+//private let api = "/llmtools"
 //private let clearApi = "/llmclear"
-//private let model = "gemma4:e4b"
+//private let model = "qwen3.5:9b"
 //private let appID = Bundle.main.bundleIdentifier
 
 
@@ -20,30 +20,69 @@ private let appID = Bundle.main.bundleIdentifier
 // game's payoff turn; the backend already persists reasoning independently of
 // what's rendered here (handlers.py accumulates it server-side for replay),
 // so hiding it from the bubble doesn't affect the model's own memory of it
+
+    
 private let showThinking = false
+
+struct OpenAIFunction: Codable {
+    let name: String?
+    let arguments: String?
+}
+
+struct OpenAIToolCall: Codable {
+    let id: String
+    let type: String = "function"
+    let function: OpenAIFunction
+
+    enum CodingKeys: String, CodingKey {
+        case id = "id"
+        case type = "type"
+        case function = "function"
+    }
+}
+
+// some providers omit index on whole, non-fragmented tool calls
+struct ToolCallDelta: Decodable {
+    let index: Int?
+    let id: String?
+    let function: OpenAIFunction?
+}
+
+struct ToolCallsData: Decodable {
+    let turnID: Int64
+    let calls: [OpenAIToolCall]
+}
 
 struct Message: Encodable {
     let role: String
     let content: String?
+    var tool_calls: [OpenAIToolCall]?
+    var tool_call_id: String?
 
-    init(role: String = "user", content: String = "") {
+    init(role: String = "user", content: String = "",
+         tool_calls: [OpenAIToolCall]? = nil,
+         tool_call_id: String? = nil) {
         self.role = role
         self.content = content
+        self.tool_calls = tool_calls
+        self.tool_call_id = tool_call_id
     }
 }
 
 struct OpenAIRequest: Encodable {
     let model: String
-    //let max_tokens = 8192 // some models require it
-    let messages: [Message]
+    let max_tokens = 8192
+    var messages: [Message]
     let stream = true       // always streaming
     let appID: String?
+    var turnID: Int64?
+    var tools: [OpenAIToolSchema]?
 
 }
 
 struct OpenAIResponse: Decodable {
     let model: String?
-    let choices: [Choice]   // guaranteed only one completion choice
+    let choices: [Choice]?   // guaranteed only one completion choice
     let created: Double?
 
     struct Choice: Decodable {
@@ -56,9 +95,10 @@ struct Delta: Decodable {
     let content: String?
     let reasoning: String?
     let reasoning_content: String?
+    let tool_calls: [ToolCallDelta]?
 }
 
-enum SseEvent { case Error, Message, Unknown }
+enum SseEvent { case Error, Message, ToolCalls, Unknown }
 
 // a fresh-per-turn state machine that buffers the start of a completion just
 // long enough to detect and strip a leading "[SECRET: ...]" marker before any
@@ -72,6 +112,8 @@ struct SseAccumulator {
     let completion: Chat
     let errMsg: Binding<String>
     var secretMarker: SecretMarkerState = .buffering("")
+    var turnID: Int64? = nil
+    var parallelCalls = [OpenAIToolCall]()
 }
 
 // the game rules instruct the model to pin its answer in this marker on the
@@ -84,6 +126,78 @@ private let Json = JSONDecoder()
 
 struct Rein {
     private static var isThinking = false
+    private let toolbox = Toolbox()
+
+    func llmTools(_ messages: [Message], completion: Chat, errMsg: Binding<String>) async {
+        guard let harnessApi = URL(string: "\(harness)\(api)") else {
+            errMsg.wrappedValue = "Bad harness URL \(harness)\(api)"
+            return
+        }
+
+        var openAIRequest = OpenAIRequest(
+            model: model,
+            messages: messages,
+            appID: appID,
+            tools: toolbox.schemas(),
+        )
+
+        var sendNewPrompt = true
+        while sendNewPrompt {
+            sendNewPrompt = false
+
+            let request = Result { try prepareRequest(harnessApi, openAIRequest) }
+            guard case .success(let request) = request else {
+                if case .failure(let error) = request {
+                    errMsg.wrappedValue = "Prepare request failed \(error)"
+                }
+                return
+            }
+
+            let bytes: URLSession.AsyncBytes
+            do {
+                bytes = try await postPrompt(request)
+            } catch {
+                errMsg.wrappedValue = "Connect to harness failed \(error)"
+                return
+            }
+
+            var acc = SseAccumulator(completion: completion, errMsg: errMsg)
+            do {
+                try await processSse(bytes, &acc)
+            } catch {
+                errMsg.wrappedValue = "SSE parsing failed \(error)"
+                completion.content.append("\n\n**\(errMsg.wrappedValue)**\n\n")
+                return
+            }
+
+            if !acc.parallelCalls.isEmpty {
+                guard let turnID = acc.turnID else {
+                    errMsg.wrappedValue = "Tool call event missing turnID"
+                    completion.content.append("\n\n**\(errMsg.wrappedValue)**\n\n")
+                    return
+                }
+
+                var toolResults = [Message]()
+                for call in acc.parallelCalls {
+                    let result = await toolbox.invoke(function: call.function) ??
+                        "Tool '\(call.function.name ?? "unknown")' does not exist. Complete the prompt without the tool."
+
+                    toolResults.append(Message(
+                        role: "tool",
+                        content: result,
+                        tool_call_id: call.id,
+                    ))
+                }
+
+                // the backend rebuilds context from its db; only the results travel
+                openAIRequest.messages = toolResults
+                openAIRequest.turnID = turnID
+                openAIRequest.tools = nil
+
+                sendNewPrompt = true
+            }
+        }
+    }
 
     func llmPrompt(_ messages: [Message], completion: Chat, errMsg: Binding<String>) async {
 
@@ -243,7 +357,7 @@ struct Rein {
 
                         let openAIResponse = try Json.decode(OpenAIResponse.self, from: Data(tagline.utf8))
 
-                        if let delta = openAIResponse.choices.first?.delta {
+                        if let delta = openAIResponse.choices?.first?.delta {
                             let content = decoratedContent(from: delta, &acc)
 
                             if !content.isEmpty {
@@ -260,11 +374,16 @@ struct Rein {
                             }
                         }
 
-                        if let finishReason = openAIResponse.choices.first?.finish_reason, finishReason == "length" || finishReason == "content_filter" {
+                        if let finishReason = openAIResponse.choices?.first?.finish_reason, finishReason == "length" || finishReason == "content_filter" {
                             acc.errMsg.wrappedValue += "LLM STREAM CUT OFF!"
                             sseEvent = .Error
                         }
-                        
+
+                    case .ToolCalls:
+                        let event = try Json.decode(ToolCallsData.self, from: Data(tagline.utf8))
+                        acc.turnID = event.turnID
+                        acc.parallelCalls.append(contentsOf: event.calls)
+
                     case .Error:
                         if let errline = try? Json.decode(String.self, from: Data(tagline.utf8)){
                             acc.errMsg.wrappedValue += errline
@@ -284,6 +403,7 @@ struct Rein {
                 sseEvent = switch tagline {
                     case "error", "Error", "ERROR" : .Error
                     case "message", "Message", "MESSAGE" : .Message
+                    case "tool_calls", "Tool_calls", "TOOL_CALLS" : .ToolCalls
                     default: .Unknown
                 }
             }
