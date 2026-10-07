@@ -5,6 +5,7 @@ from starlette.routing import Route
 
 import handlers
 from runners import LlmRunners
+from toolbox import Toolbox
 
 import aiosqlite
 import asyncio
@@ -29,6 +30,7 @@ async def lifespan(app: Starlette):
         PRAGMA temp_store = MEMORY;
         PRAGMA wal_autocheckpoint = 0;
     """)
+    await rwdb.execute("PRAGMA foreign_keys = ON;")
     # make db accessible to all route handlers
     app.state.rwdb = rwdb
 
@@ -83,9 +85,12 @@ routes = [
 	Route('/llmprompt', handlers.llmprompt, methods=['POST']),
 	Route('/llmchat', handlers.llmchat, methods=['POST']),
 	Route('/llmclear', handlers.llmclear, methods=['POST']),
+	Route('/llmtools/', handlers.llmtools, methods=['POST']),
+	Route('/weather', handlers.weather, methods=['POST']),
 ]
 
 app = Starlette(routes=routes, lifespan=lifespan)
 
 app.state.runners = LlmRunners()
+app.state.toolbox = Toolbox()
 app.state.client = AsyncClient(timeout = Timeout(connect=5.0, read=None, write=None, pool=None), http2=True)
