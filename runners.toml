@@ -34,10 +34,10 @@ weight = 0.7
 
 [[runners]]
 api = "groq"
-model = "llama-3.3-70b-versatile"
+model = "openai/gpt-oss-120b"
 weight = 0.8
 
 [[runners]]
 api = "mistral"
-model = "mistral-large-latest"
+model = "mistral-small-latest"
 weight = 0.6
