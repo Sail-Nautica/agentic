@@ -28,11 +28,6 @@ url = "https://localhost:11433/v1"
 key = ""
 
 [[runners]]
-api = "gemini"
-model = "gemini-3.6-flash"
-weight = 0.7
-
-[[runners]]
 api = "groq"
 model = "openai/gpt-oss-120b"
 weight = 0.8
