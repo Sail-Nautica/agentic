@@ -40,8 +40,10 @@ enum Game: String, CaseIterable, Identifiable {
 final class AppViewModel {
     let rein = Rein()
 
-    var systemPrompt = ""
-    var userPrompt = ""
+    var systemDraft = ""
+    var userDraft = ""
+    var draftIsSystem = false
+    var isBusy = false
     let systemInstruction = "System prompt (optional)..."
     let userInstruction = "Type a message..."
 
@@ -52,8 +54,9 @@ final class AppViewModel {
     var game: Game = .guessTheCity
 
     // shared by SubmitButton and by game init/reset: empty fields omit their role's message
-    @MainActor
     func sendTurn(system: String, user: String) async {
+        isBusy = true
+        defer { isBusy = false }
         errMsg = "" // avoid re-surfacing a stale error left over from a dismissed turn
         var messages: [Message] = []
 
@@ -73,8 +76,9 @@ final class AppViewModel {
         showError = !errMsg.isEmpty
     }
 
-    @MainActor
     func resetGame() async {
+        isBusy = true
+        defer { isBusy = false }
         await rein.llmClear(errMsg: Bindable(self).errMsg)
         showError = !errMsg.isEmpty
         conversation.removeAll()

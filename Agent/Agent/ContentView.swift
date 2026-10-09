@@ -10,34 +10,44 @@ import SwiftUI
 struct SubmitButton: View {
     @Environment(AppViewModel.self) private var vm
 
-    @State private var isSending = false
-
-    private var hasContent: Bool { !vm.systemPrompt.isEmpty || !vm.userPrompt.isEmpty }
+    private var hasContent: Bool { !vm.systemDraft.isEmpty || !vm.userDraft.isEmpty }
 
     var body: some View {
         Button {
-            isSending = true
+            // both drafts persist across toggles until Send, then clear immediately; role reverts to user
+            let system = vm.systemDraft
+            let user = vm.userDraft
+            vm.systemDraft = ""
+            vm.userDraft = ""
+            vm.draftIsSystem = false
 
-            // fields persist until Send is clicked, then clear immediately
-            let system = vm.systemPrompt
-            let user = vm.userPrompt
-            vm.systemPrompt = ""
-            vm.userPrompt = ""
-
-            Task(priority: .background) {
-                await vm.sendTurn(system: system, user: user)
-                isSending = false
-            }
+            Task { await vm.sendTurn(system: system, user: user) }
 
         } label: {
-            if isSending {
+            if vm.isBusy {
                 ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .secondary)).padding(10)
             } else {
                 Image(systemName: "paperplane.fill").foregroundColor(hasContent ? .yellow : .gray).padding(10)
             }
         }
-        .disabled(isSending || !hasContent)
-        .background(Color(isSending || !hasContent ? .secondarySystemBackground : .systemBlue))
+        .disabled(vm.isBusy || !hasContent)
+        .background(Color(vm.isBusy || !hasContent ? .secondarySystemBackground : .systemBlue))
+        .clipShape(Circle())
+        .padding(.trailing)
+    }
+}
+
+struct RoleToggleButton: View {
+    @Environment(AppViewModel.self) private var vm
+
+    var body: some View {
+        Button {
+            vm.draftIsSystem.toggle()
+        } label: {
+            Image(systemName: vm.draftIsSystem ? "gearshape.fill" : "person.fill")
+                .foregroundColor(vm.draftIsSystem ? .orange : .blue).padding(10)
+        }
+        .background(Color(.secondarySystemBackground))
         .clipShape(Circle())
         .padding(.trailing)
     }
@@ -46,23 +56,17 @@ struct SubmitButton: View {
 struct ClearButton: View {
     @Environment(AppViewModel.self) private var vm
 
-    @State private var isClearing = false
-
     var body: some View {
         Button {
-            isClearing = true
-            Task(priority: .background) {
-                await vm.resetGame()
-                isClearing = false
-            }
+            Task { await vm.resetGame() }
         } label: {
-            if isClearing {
+            if vm.isBusy {
                 ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .secondary)).padding(10)
             } else {
                 Image(systemName: "trash.fill").foregroundColor(.red).padding(10)
             }
         }
-        .disabled(isClearing)
+        .disabled(vm.isBusy)
         .background(Color(.secondarySystemBackground))
         .clipShape(Circle())
         .padding(.trailing)
@@ -81,27 +85,22 @@ struct ContentView: View {
             .pickerStyle(.segmented)
             .padding(.horizontal)
             .onChange(of: vm.game) {
-                Task(priority: .background) { await vm.resetGame() }
+                Task { await vm.resetGame() }
             }
 
             ConversationView()
 
-            VStack(spacing: 6) {
-                TextField(vm.systemInstruction, text: Bindable(vm).systemPrompt)
+            HStack(alignment: .bottom) {
+                TextField(vm.draftIsSystem ? vm.systemInstruction : vm.userInstruction, text: vm.draftIsSystem ? Bindable(vm).systemDraft : Bindable(vm).userDraft)
                     .focused($messageInFocus)
                     .textFieldStyle(.roundedBorder)
-
-                HStack(alignment: .bottom) {
-                    TextField(vm.userInstruction, text: Bindable(vm).userPrompt)
-                        .focused($messageInFocus)
-                        .textFieldStyle(.roundedBorder)
-                        .cornerRadius(20)
-                        .shadow(radius: 2)
-                        .backgroundStyle(Color(.clear))
-                        .border(Color(.clear))
-                    ClearButton()
-                    SubmitButton()
-                }
+                    .cornerRadius(20)
+                    .shadow(radius: 2)
+                    .backgroundStyle(Color(.clear))
+                    .border(Color(.clear))
+                RoleToggleButton()
+                ClearButton()
+                SubmitButton()
             }
             .padding(EdgeInsets(top: 0, leading: 20, bottom: 8, trailing: 0))
         }
