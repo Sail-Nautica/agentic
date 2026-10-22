@@ -113,12 +113,20 @@ struct ContentView: View {
             guard vm.conversation.isEmpty else { return }
             await vm.sendTurn(system: vm.game.rules, user: "")
         }
-        .alert("LLM Error", isPresented: Bindable(vm).showError) {
+        .alert(vm.showError ? "LLM Error" : "Advisory",
+               isPresented: Binding(get: { vm.showError || vm.showOk },
+                                    set: { if !$0 { vm.showError = false; vm.showOk = false } })) {
                 Button("OK") {
                     vm.errMsg = ""
                 }
             } message: {
                 Text(vm.errMsg)
             }
+        .sheet(isPresented: Bindable(vm).getSignedin) {
+            SigninView(isPresenting: Bindable(vm).getSignedin)
+                .presentationDetents([.fraction(0.25)])
+                .presentationDragIndicator(.hidden)
+                .interactiveDismissDisabled()
+        }
     }
 }

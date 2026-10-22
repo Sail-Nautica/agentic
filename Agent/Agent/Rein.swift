@@ -4,8 +4,11 @@ import SwiftUI
 private let harness = "https://34.16.51.43"
 private let api = "/llmtools"
 private let clearApi = "/llmclear"
+private let addAgentApi = "/addagent"
 private let model = "qwen3.5:9b"
 private let appID = Bundle.main.bundleIdentifier
+// same OAuth client ID that Info.plist registers as GIDClientID
+private let googleClientID = Bundle.main.object(forInfoDictionaryKey: "GIDClientID") as? String ?? ""
 
 
 //Class
@@ -271,6 +274,45 @@ struct Rein {
         case .failure(let error):
             errMsg.wrappedValue = "Connect to harness failed \(error)"
         }
+    }
+
+    func addAgent(_ idToken: String?, errMsg: Binding<String>) async -> String? {
+        guard let idToken else { return nil }
+        guard let harnessApi = URL(string: "\(harness)\(addAgentApi)") else {
+            errMsg.wrappedValue = "Bad harness URL \(harness)\(addAgentApi)"
+            return nil
+        }
+
+        var request = URLRequest(url: harnessApi)
+        request.httpMethod = "POST"
+        request.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
+        let body = Result { try JSONSerialization.data(withJSONObject: ["clientID": googleClientID, "idToken": idToken]) }
+        guard case .success(let body) = body else {
+            errMsg.wrappedValue = "addAgent: JSON serialization"
+            return nil
+        }
+        request.httpBody = body
+
+        let response = await Result { try await URLSession.shared.data(for: request) }
+        guard case .success(let (data, response)) = response else {
+            errMsg.wrappedValue = "addAgent: POSTing failed"
+            return nil
+        }
+        if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+            errMsg.wrappedValue = "\(http.statusCode): \(HTTPURLResponse.localizedString(forStatusCode: http.statusCode))"
+            return nil
+        }
+
+        guard let reply = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let ticket = reply["ticket"] as? String,
+              let lifetime = reply["lifetime"] as? Double else {
+            errMsg.wrappedValue = "addAgent: JSON deserialization"
+            return nil
+        }
+        Ticket.shared.ticket = ticket
+        Ticket.shared.creator = reply["creator"] as? String ?? "Profile NA"
+        Ticket.shared.expiration = Date(timeIntervalSinceNow: lifetime - 1)
+        return ticket
     }
 
     private func prepareRequest(_ harnessApi: URL, _ payload: OpenAIRequest) throws -> URLRequest {

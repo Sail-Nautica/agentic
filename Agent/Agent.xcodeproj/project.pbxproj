@@ -6,6 +6,11 @@
 	objectVersion = 110;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A1000001304B583D00569395 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = A1000003304B583D00569395 /* GoogleSignIn */; };
+		A1000002304B583D00569395 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = A1000004304B583D00569395 /* GoogleSignInSwift */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		50308A8D304B583D00569395 /* Agent.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Agent.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -22,6 +27,8 @@
 		50308A8A304B583D00569395 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
+				A1000001304B583D00569395 /* GoogleSignIn in Frameworks */,
+				A1000002304B583D00569395 /* GoogleSignInSwift in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -60,6 +67,10 @@
 				50308A8F304B583D00569395 /* Agent */,
 			);
 			name = Agent;
+			packageProductDependencies = (
+				A1000003304B583D00569395 /* GoogleSignIn */,
+				A1000004304B583D00569395 /* GoogleSignInSwift */,
+			);
 			productName = Agent;
 			productReference = 50308A8D304B583D00569395 /* Agent.app */;
 			productType = "com.apple.product-type.application";
@@ -87,6 +98,9 @@
 				Base,
 			);
 			mainGroup = 50308A84304B583D00569395;
+			packageReferences = (
+				A1000005304B583D00569395 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+			);
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 50308A8E304B583D00569395 /* Products */;
@@ -246,6 +260,7 @@
 				DEVELOPMENT_TEAM = KX73L89TZ5;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "To lookup weather at location";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -280,6 +295,7 @@
 				DEVELOPMENT_TEAM = KX73L89TZ5;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "To lookup weather at location";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -324,6 +340,29 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+/* Begin XCRemoteSwiftPackageReference section */
+		A1000005304B583D00569395 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 10.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A1000003304B583D00569395 /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1000005304B583D00569395 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
+		};
+		A1000004304B583D00569395 /* GoogleSignInSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A1000005304B583D00569395 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignInSwift;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 50308A85304B583D00569395 /* Project object */;
 	validationLevel = 1;

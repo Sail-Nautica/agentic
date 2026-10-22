@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>GIDClientID</key>
+	<string>781310286343-vr6mocjh07pvrcg9rr5pkr2jhdtblh4d.apps.googleusercontent.com</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>To access ticket in Keychain.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.781310286343-vr6mocjh07pvrcg9rr5pkr2jhdtblh4d</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

@@ -42,8 +42,26 @@ fileprivate func jsonToSchema(_ tool: String) -> OpenAIToolSchema {
     }
 }
 
-func getLocation(_ argv: [String]) async -> String {
-    "latitude: \(LocManagerViewModel.shared.location.lat), longitude: \(LocManagerViewModel.shared.location.lon)"
+func getLocAuth(_ argv: [String]) async -> String {
+    guard let ticket = Ticket.shared.ticket, argv[0] == ticket else {
+        return "401 Unauthorized. Call get_auth to obtain a new ticket and retry. Never reuse an old ticket."
+    }
+    return "latitude: \(LocManagerViewModel.shared.location.lat), longitude: \(LocManagerViewModel.shared.location.lon)"
+}
+
+func getAuth(_ argv: [String]) async -> String {
+    if let ticket = Ticket.shared.ticket { return "Authorization ticket is: \(ticket)" }
+
+    // suspend the tool call until SigninView is dismissed
+    await withUnsafeContinuation { continuation in
+        Ticket.shared.vm?.signinCompletion = { continuation.resume() }
+        Ticket.shared.vm?.getSignedin = true
+    }
+
+    guard let ticket = Ticket.shared.ticket else {
+        return "401 Unauthorized. Complete the prompt by informing user that task cannot be completed due to failed authorization."
+    }
+    return "Authorization ticket is: \(ticket)"
 }
 
 typealias ToolFunction = ([String]) async -> String
@@ -58,7 +76,8 @@ struct Toolbox {
 
     init() {
         self.tools = [
-            "get_location": Tool(schema: jsonToSchema("get_location"), function: getLocation),
+            "get_auth": Tool(schema: jsonToSchema("get_auth"), function: getAuth),
+            "get_loc_auth": Tool(schema: jsonToSchema("get_loc_auth"), function: getLocAuth),
         ]
     }
 

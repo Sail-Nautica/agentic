@@ -49,6 +49,9 @@ final class AppViewModel {
 
     var errMsg = ""
     var showError = false
+    var showOk = false
+    var getSignedin = false
+    @ObservationIgnored var signinCompletion: (() async -> Void)?
 
     var conversation: [Chat] = []
     var game: Game = .guessTheCity
@@ -73,7 +76,8 @@ final class AppViewModel {
         conversation.append(completion)
 
         await rein.llmTools(messages, completion: completion, errMsg: Bindable(self).errMsg)
-        showError = !errMsg.isEmpty
+        // an advisory (showOk) shares errMsg and must not be promoted to an error
+        showError = !errMsg.isEmpty && !showOk
     }
 
     func resetGame() async {
@@ -92,6 +96,9 @@ struct AgentApp: App {
 
     init() {
         LocManager.shared.startUpdates()
+        let vm = vm
+        Ticket.shared.vm = vm
+        Task { await Ticket.shared.open(errMsg: Bindable(vm).errMsg, showOk: Bindable(vm).showOk) }
     }
 
     var body: some Scene {
