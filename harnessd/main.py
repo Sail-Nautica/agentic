@@ -7,6 +7,8 @@ import handlers
 from runners import LlmRunners
 from toolbox import Toolbox
 
+from google.auth.transport import requests as grequests
+import requests
 import aiosqlite
 import asyncio
 from contextlib import asynccontextmanager
@@ -87,6 +89,7 @@ routes = [
 	Route('/llmclear', handlers.llmclear, methods=['POST']),
 	Route('/llmtools/', handlers.llmtools, methods=['POST']),
 	Route('/weather', handlers.weather, methods=['POST']),
+	Route('/addagent/', handlers.addagent, methods=['POST']),
 ]
 
 app = Starlette(routes=routes, lifespan=lifespan)
@@ -94,3 +97,5 @@ app = Starlette(routes=routes, lifespan=lifespan)
 app.state.runners = LlmRunners()
 app.state.toolbox = Toolbox()
 app.state.client = AsyncClient(timeout = Timeout(connect=5.0, read=None, write=None, pool=None), http2=True)
+# caches Google's public JWKS across addagent calls
+app.state.googleJWKS = grequests.Request(session=requests.Session())

@@ -8,9 +8,13 @@ from http import HTTPStatus
 import httpx
 from httpx import RequestError, Response
 import logging
+import time
 import msgspec
 from msgspec import Raw, Struct, field, json, structs, UNSET, UnsetType
+from google.oauth2 import id_token
+import secrets
 from starlette.background import BackgroundTask
+from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse, Response, StreamingResponse
 from toolbox import OpenAIToolSchema, getWeather
@@ -38,6 +42,10 @@ class OpenAIRequest(Struct, omit_defaults=True):
 	turnID: int | UnsetType = UNSET
 	max_tokens: int | None = None
 	tools: Raw | UnsetType = UNSET
+
+class AgentAuth(Struct):
+	clientID: str
+	idToken:  str
 
 class WeatherRequest(Struct):
 	lat: str
@@ -432,6 +440,45 @@ async def weather(request: Request):
     if result is None:
         return _logClientErr(clientIP, HTTPStatus.BAD_GATEWAY, error or "No weather result.")
     return PlainTextResponse(result)
+
+# caps ticket lifetime; longer means fewer sign-ins but a wider window for misuse
+TICKET_MAX_LIFETIME = 180
+
+async def addagent(request: Request):
+    clientIP = request.client.host if request.client else "Unknown"
+    try:
+        auth = json.decode(await request.body(), type=AgentAuth)
+    except Exception as err:
+        return _logClientErr(clientIP, HTTPStatus.UNPROCESSABLE_ENTITY, f"Invalid JSON body: {err}")
+
+    try:
+        # blocking network/crypto call, keep it off the event loop
+        claims = await run_in_threadpool(
+            id_token.verify_oauth2_token, auth.idToken, request.app.state.googleJWKS,
+            audience=auth.clientID, clock_skew_in_seconds=50)
+    except ValueError:
+        return _logClientErr(clientIP, HTTPStatus.UNAUTHORIZED, "Unauthorized")
+
+    creator = claims.get("name") or "Profile NA"
+    ticket = secrets.token_hex(32)
+    now = int(time.time())
+    lifetime = min(int(claims["exp"]) - now + 1, TICKET_MAX_LIFETIME)
+
+    rwdb = request.app.state.rwdb
+    try:
+        # purge expired tickets in bulk, only once enough have piled up
+        async with rwdb.execute("SELECT COUNT(*) FROM tickets WHERE expiration < ?", (now - 300,)) as cur:
+            stale = (await cur.fetchone())[0]
+        if stale > 10:
+            await rwdb.execute("DELETE FROM tickets WHERE expiration < ?", (now - 300,))
+        await rwdb.execute("INSERT INTO tickets (ticket, creator, expiration) VALUES (?, ?, ?)",
+            (ticket, creator, now + lifetime))
+    except Exception as err:
+        logger.error(f"addagent: {err}")
+        return _logClientErr(clientIP, HTTPStatus.INTERNAL_SERVER_ERROR, str(err))
+
+    return Response(json.encode({"ticket": ticket, "creator": creator, "lifetime": lifetime}),
+        media_type="application/json")
 
 async def llmtools(request: Request):
     clientIP = request.client.host if request.client else "Unknown"

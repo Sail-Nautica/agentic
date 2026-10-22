@@ -3,6 +3,7 @@ from collections.abc import Awaitable, Callable
 from http import HTTPStatus
 from msgspec import Struct, json
 import pkgutil
+import time
 from starlette.datastructures import State
 from typing import TYPE_CHECKING
 
@@ -28,7 +29,7 @@ class OpenAIToolSchema(Struct, omit_defaults=True):
     type:     str
     function: OpenAISchemaFunction
 
-WEATHER_JSON = pkgutil.get_data(__name__, "tools/get_weather.json").decode("utf-8")
+WEATHER_AUTH_JSON = pkgutil.get_data(__name__, "tools/get_weather_auth.json").decode("utf-8")
 
 class Current(Struct):
     temperature_2m: float = 0.0
@@ -57,6 +58,22 @@ async def getWeather(app: State, argv: list[str]) -> tuple[str | None, str | Non
     except Exception as err:
         return None, f"Cannot connect to Open Meteo: {err}"
 
+# None if the ticket is live, else the 401 message for the LLM
+async def _checkAuth(rwdb, ticket: str) -> str | None:
+    try:
+        async with rwdb.execute("SELECT expiration FROM tickets WHERE ticket = ?", (ticket,)) as cur:
+            row = await cur.fetchone()
+    except Exception as err:
+        return f"Ticket lookup failed: {err}"
+    if row is None or time.time() > row[0]:
+        return ("401 Unauthorized. Call get_auth to obtain a new ticket and retry. "
+                "Never reuse an old ticket.")
+    return None
+
+async def getWeatherAuth(app: State, argv: list[str]) -> tuple[str | None, str | None]:
+    authErr = await _checkAuth(app.rwdb, argv[0])
+    return (None, authErr) if authErr else await getWeather(app, argv[1:])
+
 type ToolFunction = Callable[[State, list[str]], Awaitable[tuple[str | None, str | None]]]
 
 class Tool:
@@ -68,7 +85,7 @@ class Tool:
 class Toolbox:
     def __init__(self):
         self.tools: dict[str, Tool] = {
-            "get_weather": Tool(json.decode(WEATHER_JSON, type=OpenAIToolSchema), getWeather),
+            "get_weather_auth": Tool(json.decode(WEATHER_AUTH_JSON, type=OpenAIToolSchema), getWeatherAuth),
         }
 
     def schemas(self) -> list[OpenAIToolSchema]:
