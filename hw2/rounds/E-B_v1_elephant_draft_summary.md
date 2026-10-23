@@ -1,0 +1,43 @@
+# E-B first draft (Stage B Elephant, own proposal) — condensed transcription of the agent's report
+
+The agent read design_specs.md, requirements.md, E-A.md, CLAUDE.md, runners.toml, all of harnessd and all Swift files in Agent/Agent. Nothing was written or run.
+
+## 0. Proposal summary
+- Back end: NO changes. /llmtools, /addagent, /llmclear suffice (important if the staff back end is used for grading).
+- Two device-side tools: existing get_auth (kept) + new recenter_map (ticket, latitude, longitude as strings). Literal reading of the spec; conflicts with E-A section 7 item 1.
+- Secret city pinned by a hidden marker `[SECRET: <city>]` in the first reply, stored and replayed by the harness; the app strips it before display.
+- App becomes a small state machine around the existing network loop; app keeps only latest reply + a "what Retry resends" record; harness holds the conversation.
+
+## 1. Reuse vs change
+Front end reused: Rein SSE reader (processSse), request builder, addAgent, llmClear; tool-call event parsing; the [SECRET: ...] leading-marker stripper; Google sign-in wrappers; Keychain item definition (generic password, WhenPasscodeSetThisDeviceOnly, .userPresence; source of the passcode fallback); LocManager for the permission prompt.
+Front end changes: AppViewModel (phase, latest reply, tool-called flag, retry record, camera position, pin); ContentView replaced (map + panel + Clear); Rein.llmTools returns a Result, adds 30 s per-request limit, resume from stored turn ID + tool results, tells the view model a tool call started; Toolbox registers get_auth and recenter_map only (dead code flagged, not deleted); Ticket drops the launch-time Keychain read and reads with Face ID every time, returns token/nil; SigninView strips its own text; Info.plist portrait only, reword location usage text (mentions weather), NSFaceIDUsageDescription creates a one-time system dialog not in E-A's overlay list. Chat list, role toggle, Game enum, game picker removed.
+Back end: no change. Tool schemas travel from the client; get_weather_auth is always offered to every client (rules say "ignore weather").
+
+## 2. Rules, city choice, secrecy
+- LLM API is stateless (checked llmtools/_retrieveHistory): harness stores every turn in SQLite keyed by appID (bundle ID) and replays all of it to whichever upstream model it picks. The city must therefore be written into stored history.
+- First request carries system rules + a short user message ("Begin") in one array (system-only last message is rejected by some providers, e.g. Mistral, and the harness silently moves on). First reply starts with [SECRET: city], welcome, one hint. App buffers whole reply, strips the marker anywhere, publishes cleaned text (also required so streaming does not wipe old hints at the first token).
+- Rules text: choose a well-known city; plain text, two sentences max; one hint at a time, never name/coordinates; accept reasonable aliases; on correct guess call get_auth then recenter_map, then congratulate and invite a new game; if a tool returns "denied" do not retry, reveal the city and invite a new game; on give-up reveal and stop; never start a second game in the same conversation.
+- City choice is entirely the LLM's; risk: same few cities. Limits: secret is prompt-enforced only, marker crosses the network and sits in the DB in plain text, thinking-model reasoning hidden but stored. First reply without a marker = failed start (Error + Retry).
+
+## 3. Recenter tool and token
+- get_auth (no args) returns the token; recenter_map(ticket, latitude, longitude as strings) validates the ticket against the device's own copy (tutorial's getLocAuth pattern), range-checks, moves map, drops pin, returns immediately (does not wait for the 2 s flight). Back end never sees this ticket (weak check; question 2).
+- get_auth flow: Keychain item exists and unexpired? no -> Google sheet -> /addagent -> save to Keychain; yes -> read with Face ID or passcode; failure/cancel -> "denied".
+- Range check placed BEFORE any prompt (E-A puts it after Face ID). Results: success "Done... congratulate and invite"; denial "Denied... map NOT moved. Do not call get_auth again. Tell the user the city's name..."; bad coordinates "422 Invalid coordinates... call again" (distinct from denial; E-A treats it as denial).
+- Premature/parallel calls with a bad ticket get the 401 text; cap the tool loop at about four legs per user action.
+
+## 4. States, win detection, timer
+- Starting at launch/after Clear/Retry of failed start; Ready on first reply with marker or any plain reply; Sending (status "Thinking..." then "Correct! Moving the map..." when a game tool call is seen, keyboard dismissed); Error on transport failure, SSE error, stream cut-off, 30 s timer, or empty reply; Ended after a final reply following a tool call; Clearing after confirm or Play again.
+- Win detection: the tool function sets a "game tool called this turn" flag (any game tool, not only recenter_map, so denial at get_auth still ends the game). Differs from E-A wording.
+- 30 s timer lives in Rein, a race per leg; excludes sign-in/Face ID/tool execution; Clear and Starting need it too. Open: total vs first byte vs idle (harness sends SSE keep-alive pings; local thinking model is slow).
+
+## 5. Map
+SwiftUI Map with a camera-position state; initial camera "follow user with zoomed-out fallback" (moves once to the first fix, stops following when user pans); win: city-sized region animated ~2 s (skipped under Reduce Motion), pin as a Marker with empty title (verify no label); shift target centre south by the panel's share of the visible span once at flight start (needs device check); Clear removes the pin only; map tap dismisses keyboard.
+
+## 6. History and Retry
+Retry resend table: failed start -> silent /llmclear then rules again; failed guess (leg 1) -> resend same text as a new turn (LLM may see it twice); failed later leg -> resend stored turn ID + already-computed tool results (no second Face ID or map move; harness result update idempotent). Trap: if a failure happens after a tool call and the user sends new text, history contains tool calls with no matching result and strict providers reject every later request (503 until Clear); proposal: Send disabled in Error when a final leg is pending (deviation from E-A).
+
+## 7. Risks and contradictions found in E-A
+1 E-A vs spec on token handling (one internal tool vs LLM obtaining the ticket); 2 E-A's "local wipe cannot fail" is wrong (/llmclear is a network call; need Error path and timer; otherwise new rules land on the old conversation); 3 Send in Error after a tool call can poison history; 4 range check order/bad coordinates not a denial; 5 app cannot verify a win (prompt injection/hallucination moves the map); 6 back end picks among Groq gpt-oss-120b, Mistral Small, local qwen per request, quality varies; 7 appID = bundle ID so testers share one conversation and one Clear wipes everyone's game; 8 back-end ticket cap is 180 s (silent refresh may flash the Google sheet); 9 Ticket.save's SecItemUpdate on a userPresence item probably prompts, giving double Face ID (use delete-then-add; test on device); 10 unexpected system dialogs (Face ID permission, location text "weather"); 11 no timer covers sign-in (/addagent default ~60 s); 12 "Secure Enclave" is only via Keychain access control, no explicit SE key; 13 after a give-up the LLM invites a new game but the app stays in Ready (rules must say "tap Clear" after give-up, "Play again" after a win); 14 Requirement 4 (Clear removes system prompts) vs E-A re-sending rules immediately; 15 first-launch false start; 16 backgrounding cancels stream (not handled); 17 dead code to surface not edit: get_loc_auth.json, get_location.json, getLocAuth, LocManagerViewModel, llmPrompt, ChatView.swift, Game enum, showThinking.
+
+## 8. Clarifying questions (agent's, most important first)
+1 Which back end is graded (yours or staff's)? 2 Two tools (LLM obtains ticket) or one tool with app-internal token; should denial at get_auth end the game; is a device-side ticket check enough? 3 After a failed final request, disable Send until Retry/Clear? 4 What does 30 s measure (total/first data/idle); give Clearing a timer and failure path? 5 Per-install value in appID so testers do not share a conversation? 6 May the app nudge city variety (random letter/region)? 7 Is Keychain userPresence what the grader means by "Secure Enclave"? 8 May the LLM tell the user to tap Clear after a give-up / Play again after a win? 9 First reply without marker (and empty reply) = failed start OK? 10 One-time Face ID permission dialog and re-worded location dialog acceptable? 11 Delete-then-add for the Keychain item OK?

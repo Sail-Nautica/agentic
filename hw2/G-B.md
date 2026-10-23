@@ -1,0 +1,9 @@
+# Exhibit G-B: Product Quality Auditor Summary (Goldfish 2)
+
+Goldfish 2 saw the latest UX spec (E-A), the design requirements and the aesthetic preferences, and listed requirement coverage, contradictions with the preferences or Apple HIG, and unrequested features. Three fresh sessions audited E-A v5, v6 and v7.
+
+**Round 1 (v5): substantive.** Core requirements were covered, but the spec contradicted the owner's "map-dominant, minimal chrome" preferences: the panel took about 40% of the screen, with 10 states, about 30 strings and an accessibility-size layout. It also flagged much unrequested machinery (three Retry variants, timer pausing, a location notice, an echo of sent text, per-state placeholders, a four-level status priority) and nonstandard HIG choices (a "Clear" capsule that really means "new game", a permanently blank row, a disabled field as the status channel). Result: v6, roughly half the length, one Error with one Retry, a one-third panel target, no large-text rules.
+
+**Round 2 (v6): substantive but smaller.** Remaining: held-guess logic behind Retry, a "Map not moved." message, dimming of old hints, an inconsistent skip-confirmation rule for Clear, overly strong claims ("app messages live only in the status row", "nothing else" overlays), and a passcode fallback that quietly relaxes "biometric check". Result: v7, six states, five status strings, Clear always confirming, owner decisions listed in one section, relaxations stated explicitly.
+
+**Round 3 (v7): minor.** All required elements are covered. What remains traces to owner decisions (first frame not centered on the user; a give-up ends only in the LLM's text; the passcode fallback; Play again beside Clear) or to polish. Final fixes: the string count (five, not four) and a rule that the status row wraps at larger text sizes while its button stays in view. The dangling-tool-call case after a failed final request goes to the technical design.
