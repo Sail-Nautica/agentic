@@ -1,3 +1,4 @@
 llmChat tutorial grade: 100.00/100
 llmTools tutorial grade: 98.46/100
 llmPlay project grade: 96.34/100
+llmHITL tutorial grade: 0.00/100
