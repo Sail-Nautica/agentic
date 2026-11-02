@@ -24,3 +24,11 @@ Not done, blocked on the owner or a person:
 - Lifetime knob left unset (default 180).
 - Check: POST /llmclear for a throwaway app ID returned 200 and the server log shows it, so the new third statement runs on the live schema (no rows existed for that ID).
 - NOT done: any run of the app. This Mac lists the iOS 27.0 simulator runtime but `simctl boot` fails with "runtime path not found: download the iOS 27.0 simulator runtime from Xcode Settings", so E-PRE-B, E-T1 and every other runtime test are blocked until the runtime is installed or a device is used.
+
+## First run on the changed server (2026-11-02, iPhone 18 Pro simulator, iOS 27.0, simulated location 30.0,-40.0)
+- Setup: the simulator needed the server's self-signed certificate in its trust store (BB15): `xcrun simctl keychain <device> add-root-cert harnessd.crt`. Before that the app's requests never reached the server.
+- E-PRE-B: pass. The server log shows `POST /llmclear` 200 then `POST /llmtools/` 200 through `https://api.groq.com/openai/v1:openai/gpt-oss-120b` only.
+- E-B3: pass. The stored tools row for the app ID holds get_auth, get_loc_auth and recenter_map; recenter_map's required list is [ticket, latitude, longitude]; the tools row timestamp falls after the launch Clear (it was rewritten).
+- E-T1 (observations from screenshots only; the screen recording did not complete, so the "no map frame before the centered frame" check is NOT proven): the permission prompt shows the new text "To center the map on where you are"; after Allow While Using App the map appears already centered on the simulated location with the system dot in the middle; the first hint appeared above the text box without marker text; the database's turn 1 reply starts with `[SECRET: Tokyo]` followed by the welcome text. The expected advisory "No previous Ticket found. Will acquire on sign in." appeared on the fresh install.
+- Observation: the stripped marker leaves blank lines at the start of the reply, so the hint bubble shows empty lines before the text (cosmetic; the hint is capped and scrolls).
+- Not run: wins, wrong guesses, sign-in, expiry, Clear mid-game checks, relaunch, device observations (E-WIN and later need a human Google sign-in and the fixed reference city table).
