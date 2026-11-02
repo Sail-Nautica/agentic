@@ -11,18 +11,14 @@ import MapKit
 struct SubmitButton: View {
     @Environment(AppViewModel.self) private var vm
 
-    private var hasContent: Bool { [vm.systemDraft, vm.userDraft].contains { !$0.allSatisfy(\.isWhitespace) } }
+    private var hasContent: Bool { !vm.userDraft.allSatisfy(\.isWhitespace) }
 
     var body: some View {
         Button {
-            // both drafts persist across toggles until Send, then clear immediately; role reverts to user
-            let system = vm.systemDraft
             let user = vm.userDraft
-            vm.systemDraft = ""
             vm.userDraft = ""
-            vm.draftIsSystem = false
 
-            Task { await vm.sendTurn(system: system, user: user) }
+            Task { await vm.sendTurn(system: "", user: user) }
 
         } label: {
             if vm.isBusy {
@@ -33,22 +29,6 @@ struct SubmitButton: View {
         }
         .disabled(vm.isBusy || !hasContent)
         .background(Color(vm.isBusy || !hasContent ? .secondarySystemBackground : .systemBlue))
-        .clipShape(Circle())
-        .padding(.trailing)
-    }
-}
-
-struct RoleToggleButton: View {
-    @Environment(AppViewModel.self) private var vm
-
-    var body: some View {
-        Button {
-            vm.draftIsSystem.toggle()
-        } label: {
-            Image(systemName: vm.draftIsSystem ? "gearshape.fill" : "person.fill")
-                .foregroundColor(vm.draftIsSystem ? .orange : .blue).padding(10)
-        }
-        .background(Color(.secondarySystemBackground))
         .clipShape(Circle())
         .padding(.trailing)
     }
@@ -90,41 +70,29 @@ struct MapArea: View {
 struct ContentView: View {
     @FocusState private var messageInFocus: Bool // tap background to dismiss
     @Environment(AppViewModel.self) private var vm
-    @State private var showsTranscript = false
 
     var body: some View {
         VStack {
-            Picker("Game", selection: Bindable(vm).game) {
-                ForEach(Game.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
-            .disabled(vm.isBusy)
-            .onChange(of: vm.game) {
-                Task { await vm.resetGame() }
-            }
-
-            if showsTranscript {
-                ConversationView()
-            } else {
-                MapArea()
-            }
+            MapArea()
 
             VStack {
                 if let hint = vm.hint {
-                    ScrollView { ChatView(chat: hint, onTrailingEnd: false) }
-                        .frame(maxHeight: 160)
+                    ScrollView {
+                        Text(hint.content.trimmingCharacters(in: .whitespacesAndNewlines))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 16)
+                    }
+                    .frame(maxHeight: 160)
                 }
 
                 HStack(alignment: .bottom) {
-                    TextField(vm.draftIsSystem ? vm.systemInstruction : vm.userInstruction, text: vm.draftIsSystem ? Bindable(vm).systemDraft : Bindable(vm).userDraft)
+                    TextField(vm.userInstruction, text: Bindable(vm).userDraft)
                         .focused($messageInFocus)
                         .textFieldStyle(.roundedBorder)
                         .cornerRadius(20)
                         .shadow(radius: 2)
                         .backgroundStyle(Color(.clear))
                         .border(Color(.clear))
-                    RoleToggleButton()
                     ClearButton()
                     SubmitButton()
                 }
@@ -132,15 +100,6 @@ struct ContentView: View {
             }
             .contentShape(.rect)
             .onTapGesture { messageInFocus = false } // dismiss only, and never from a tap on the map
-        }
-        .navigationTitle("llmTools")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { showsTranscript.toggle() } label: {
-                    Image(systemName: showsTranscript ? "map" : "text.bubble")
-                }
-            }
         }
         .task {
             // app-launch initialization: same wipe-then-rules start as Clear, so a relaunch never stacks on an old game
