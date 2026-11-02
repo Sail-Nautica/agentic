@@ -19,13 +19,7 @@ private let googleClientID = Bundle.main.object(forInfoDictionaryKey: "GIDClient
 //private let appID = Bundle.main.bundleIdentifier
 
 
-// a thinking model's reasoning can say the secret answer out loud before the
-// game's payoff turn; the backend already persists reasoning independently of
-// what's rendered here (handlers.py accumulates it server-side for replay),
-// so hiding it from the bubble doesn't affect the model's own memory of it
 
-    
-private let showThinking = false
 
 struct OpenAIFunction: Codable {
     let name: String?
@@ -96,8 +90,6 @@ struct OpenAIResponse: Decodable {
 
 struct Delta: Decodable {
     let content: String?
-    let reasoning: String?
-    let reasoning_content: String?
     let tool_calls: [ToolCallDelta]?
 }
 
@@ -128,7 +120,6 @@ private let secretPrefix = "[SECRET:"
 private let Json = JSONDecoder()
 
 struct Rein {
-    private static var isThinking = false
     private let toolbox = Toolbox()
 
     func llmTools(_ messages: [Message], completion: Chat, errMsg: Binding<String>) async {
@@ -202,53 +193,6 @@ struct Rein {
         }
     }
 
-    func llmPrompt(_ messages: [Message], completion: Chat, errMsg: Binding<String>) async {
-
-        //test request url
-
-        guard let harnessApi = URL(string: "\(harness)\(api)") else { 
-            errMsg.wrappedValue = "Bad harness URL \(harness)\(api)"
-            return
-        }
-
-        // prepare request
-
-        let openAIRequest = OpenAIRequest(
-            model: model,
-            messages: messages,
-            appID: appID,
-        )
-
-        let request = Result { try prepareRequest(harnessApi, openAIRequest)}
-        guard case .success(let request) = request else {
-            if case .failure(let error) = request {
-                errMsg.wrappedValue = "Prepare request failed \(error)"
-            }
-            return
-        }
-
-        // post request
-
-        let bytes = await Result { try await postPrompt(request)}
-        guard case .success(let bytes) = bytes else {
-            if case .failure(let error) = bytes {
-                errMsg.wrappedValue = "Connect to harness failed \(error)"
-            }
-            return
-        }
-
-        // process response
-
-        var acc = SseAccumulator(completion: completion, errMsg: errMsg)
-        do {
-            try await processSse(bytes, &acc)
-        } catch {
-            errMsg.wrappedValue = "SSE parsing failed \(error)"
-        }
-
-    }
-
-    // reuses OpenAIRequest so /llmclear introduces no new message format
     func llmClear(errMsg: Binding<String>) async {
         guard let harnessApi = URL(string: "\(harness)\(clearApi)") else {
             errMsg.wrappedValue = "Bad harness URL \(harness)\(clearApi)"
@@ -457,25 +401,13 @@ struct Rein {
 
     }
 
+    // a thinking model's reasoning can say the secret answer out loud before the
+    // game's payoff turn; the backend already persists reasoning independently of
+    // what's rendered here (handlers.py accumulates it server-side for replay),
+    // so never decoding it for display doesn't affect the model's own memory of it
     private func decoratedContent(from delta: Delta, _ acc: inout SseAccumulator) -> String {
-        if let content = delta.content.nilIfEmpty {
-            let visible = stripSecretMarker(content, &acc.secretMarker)
-            guard !visible.isEmpty else { return "" }
-
-            let result = Rein.isThinking ? "\n</think>\n\n" + visible : visible
-            Rein.isThinking = false
-            return result
-        }
-
-        if showThinking {
-            if let reason = (delta.reasoning_content.nilIfEmpty ?? delta.reasoning.nilIfEmpty) {
-                let result = Rein.isThinking ? reason : "<think>\n" + reason
-                Rein.isThinking = false
-                return result
-            }
-        }
-
-        return ""
+        guard let content = delta.content.nilIfEmpty else { return "" }
+        return stripSecretMarker(content, &acc.secretMarker)
     }
 
     // buffers the start of a completion until it can either confirm and strip

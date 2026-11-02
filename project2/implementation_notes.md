@@ -40,5 +40,14 @@ The owner pasted the requirement document's UI list and said the UI should only 
 - Send sends only the user draft (empty system message); Clear is unchanged.
 - The rules ask the model to reply in plain text with no markdown (the first run showed literal asterisks).
 - Kept, and not in the four-item list: the system alert for errors and advisories and the Google sign-in sheet (required by the authorization requirement); the permission prompt is the system's.
-- Dead code now, surfaced and not deleted (project rule): `Game.twentyQuestions` and its rules, `Game.allCases`/`Identifiable`, `ChatView`, `ConversationView`, `AppViewModel.game` picker binding use.
+- Dead code created by this change was then removed on the owner's request (see below).
 Exhibits E-C and E-D were not edited; their departures table and tests that mention the picker, role toggle and transcript (F5d, E-PICKER, E-TAP transcript parts, E-LAYOUT list) are superseded by this change.
+
+## Dead code removed (owner request, 2026-11-02)
+Found by listing every declaration in Agent/Agent/*.swift and counting references, then reading the hits:
+- `Game.twentyQuestions`, its rules, and the enum's `String`, `CaseIterable`, `Identifiable`, `id` plumbing (`Game` now has the one case it uses).
+- `ChatView` and `ConversationView` (the `Chat` class they used is still needed and stays in ChatView.swift).
+- `Rein.llmPrompt` (never called), `showThinking` (a constant false) with its dead branch, the static `Rein.isThinking` state, and the `reasoning` and `reasoning_content` fields of `Delta` that only that branch read. The comment explaining why reasoning is never rendered was kept and moved onto `decoratedContent`.
+- The unregistered resource `tools/get_location.json`.
+Kept on purpose: `max_tokens`, `properties` and `enum_` (fields of the fixed request and tool-schema data formats, decoded or encoded rather than read directly), `getLocAuth` and `LocManagerViewModel.location` (the tutorial tool that stays registered), and all server code (tutorial front ends must keep working against it, so nothing in harnessd was removed).
+Build: BUILD SUCCEEDED; run on the simulator: launch Clear and chat through the Groq runner only, hint shows as plain text.

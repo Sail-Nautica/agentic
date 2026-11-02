@@ -98,10 +98,10 @@
 				Base,
 			);
 			mainGroup = 50308A84304B583D00569395;
+			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				A1000005304B583D00569395 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 			);
-			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 50308A8E304B583D00569395 /* Products */;
 			projectDirPath = "";
@@ -340,6 +340,7 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
 /* Begin XCRemoteSwiftPackageReference section */
 		A1000005304B583D00569395 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
 			isa = XCRemoteSwiftPackageReference;
