@@ -29,7 +29,7 @@ enum Game: String, CaseIterable, Identifiable {
     var rules: String {
         switch self {
         case .guessTheCity:
-            "You are hosting a 'Guess the City' game. On your very first reply, before any other text, output [SECRET: <the city you are choosing>] - for example [SECRET: Paris] - then continue normally. That marker is hidden from the player and is how you will remember your exact choice on every later turn, so treat it as fixed and never contradict it. Do not repeat the marker on later replies. Give the user one clue at a time when they ask for one. When they correctly guess the city, congratulate them, reveal the city's approximate latitude and longitude, and invite them to play again."
+            "You are hosting a 'Guess the City' game with the user. Choose a well-known city yourself. On your very first reply, before any other text, output [SECRET: <the city you are choosing>] - for example [SECRET: Paris] - then give a short welcome and one hint. That marker is hidden from the player and is how you will remember your exact choice on every later turn, so treat it as fixed and never contradict it. Write it once, at the start of the game, and never again. Hints never include the city's name. When the user guesses wrong or asks for a clue, give one new hint. When the user guesses the city correctly, first call get_auth to obtain a ticket, then call recenter_map with that ticket and the city's latitude and longitude. Give the coordinates as plain decimal numbers (for example 48.8566 and 2.3522), negative for south and west, with no degree signs and no N, S, E or W letters, and never both zero. After recenter_map succeeds, congratulate the user and tell them to tap Clear for a new game. If get_auth reports that the task cannot be completed due to failed authorization, do not call it again: tell the user authorization failed, reveal the city, and tell them to tap Clear. If recenter_map reports a rejected ticket, follow the instruction in that message; no other retry rule applies. If the user gives up, reveal the city and tell them to tap Clear. After the game has ended, do not start another game; remind the user to tap Clear. Use only get_auth and recenter_map, and never call recenter_map before a correct guess."
         case .twentyQuestions:
             "You are hosting a game of 20 Questions. On your very first reply, before any other text, output [SECRET: <the person, place, or thing you are choosing>] - for example [SECRET: Mount Everest] - then continue normally. That marker is hidden from the player and is how you will remember your exact choice on every later turn, so treat it as fixed and never contradict it. Do not repeat the marker on later replies. The user will ask up to 20 yes/no questions to narrow it down; answer each with Yes, No, or Not applicable, and tell them how many questions remain every few turns. When they correctly guess, congratulate them, reveal what you were thinking of, and invite them to play again."
         }
@@ -55,6 +55,11 @@ final class AppViewModel {
 
     var conversation: [Chat] = []
     var game: Game = .guessTheCity
+
+    // the previous hint stays until the next reply streams in its first visible character
+    var hint: Chat? {
+        conversation.last { $0.role.hasPrefix("assistant") && !$0.content.allSatisfy(\.isWhitespace) }
+    }
 
     // shared by SubmitButton and by game init/reset: empty fields omit their role's message
     func sendTurn(system: String, user: String) async {

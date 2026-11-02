@@ -1,0 +1,29 @@
+{
+  "type": "function",
+  "function": {
+    "name": "recenter_map",
+    "description": "Move the map on the device to the given latitude and longitude, requiring authorization ticket. Coordinates are plain decimal numbers in degrees, negative for south and west, with no degree signs and no N, S, E or W letters.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "ticket": {
+          "type": "string",
+          "description": "Authorization ticket obtained from get_auth tool"
+        },
+        "latitude": {
+          "type": "string",
+          "description": "Latitude in decimal degrees, for example 48.8566"
+        },
+        "longitude": {
+          "type": "string",
+          "description": "Longitude in decimal degrees, for example 2.3522"
+        }
+      },
+      "required": [
+        "ticket",
+        "latitude",
+        "longitude"
+      ]
+    }
+  }
+}

@@ -6,11 +6,12 @@
 //
 
 import SwiftUI
+import MapKit
 
 struct SubmitButton: View {
     @Environment(AppViewModel.self) private var vm
 
-    private var hasContent: Bool { !vm.systemDraft.isEmpty || !vm.userDraft.isEmpty }
+    private var hasContent: Bool { [vm.systemDraft, vm.userDraft].contains { !$0.allSatisfy(\.isWhitespace) } }
 
     var body: some View {
         Button {
@@ -73,9 +74,23 @@ struct ClearButton: View {
     }
 }
 
+struct MapArea: View {
+    @Bindable private var loc = LocManagerViewModel.shared
+
+    var body: some View {
+        if loc.isPositioned {
+            // UserAnnotation is the system's own location dot, not a marker we add
+            Map(position: $loc.camera) { UserAnnotation() }
+        } else {
+            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+}
+
 struct ContentView: View {
     @FocusState private var messageInFocus: Bool // tap background to dismiss
     @Environment(AppViewModel.self) private var vm
+    @State private var showsTranscript = false
 
     var body: some View {
         VStack {
@@ -84,34 +99,53 @@ struct ContentView: View {
             }
             .pickerStyle(.segmented)
             .padding(.horizontal)
+            .disabled(vm.isBusy)
             .onChange(of: vm.game) {
                 Task { await vm.resetGame() }
             }
 
-            ConversationView()
-
-            HStack(alignment: .bottom) {
-                TextField(vm.draftIsSystem ? vm.systemInstruction : vm.userInstruction, text: vm.draftIsSystem ? Bindable(vm).systemDraft : Bindable(vm).userDraft)
-                    .focused($messageInFocus)
-                    .textFieldStyle(.roundedBorder)
-                    .cornerRadius(20)
-                    .shadow(radius: 2)
-                    .backgroundStyle(Color(.clear))
-                    .border(Color(.clear))
-                RoleToggleButton()
-                ClearButton()
-                SubmitButton()
+            if showsTranscript {
+                ConversationView()
+            } else {
+                MapArea()
             }
-            .padding(EdgeInsets(top: 0, leading: 20, bottom: 8, trailing: 0))
+
+            VStack {
+                if let hint = vm.hint {
+                    ScrollView { ChatView(chat: hint, onTrailingEnd: false) }
+                        .frame(maxHeight: 160)
+                }
+
+                HStack(alignment: .bottom) {
+                    TextField(vm.draftIsSystem ? vm.systemInstruction : vm.userInstruction, text: vm.draftIsSystem ? Bindable(vm).systemDraft : Bindable(vm).userDraft)
+                        .focused($messageInFocus)
+                        .textFieldStyle(.roundedBorder)
+                        .cornerRadius(20)
+                        .shadow(radius: 2)
+                        .backgroundStyle(Color(.clear))
+                        .border(Color(.clear))
+                    RoleToggleButton()
+                    ClearButton()
+                    SubmitButton()
+                }
+                .padding(EdgeInsets(top: 0, leading: 20, bottom: 8, trailing: 0))
+            }
+            .contentShape(.rect)
+            .onTapGesture { messageInFocus = false } // dismiss only, and never from a tap on the map
         }
-        .contentShape(.rect)
-        .onTapGesture {messageInFocus.toggle()}
         .navigationTitle("llmTools")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showsTranscript.toggle() } label: {
+                    Image(systemName: showsTranscript ? "map" : "text.bubble")
+                }
+            }
+        }
         .task {
-            // app-launch initialization: send the game rules before any user input
-            guard vm.conversation.isEmpty else { return }
-            await vm.sendTurn(system: vm.game.rules, user: "")
+            // app-launch initialization: same wipe-then-rules start as Clear, so a relaunch never stacks on an old game
+            guard vm.conversation.isEmpty, !vm.isBusy else { return }
+            await vm.resetGame()
         }
         .alert(vm.showError ? "LLM Error" : "Advisory",
                isPresented: Binding(get: { vm.showError || vm.showOk },

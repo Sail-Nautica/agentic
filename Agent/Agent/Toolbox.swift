@@ -1,4 +1,5 @@
 import Foundation
+import CoreLocation
 
 struct OpenAIToolSchema: Codable {
     let type: String = "function"
@@ -42,11 +43,29 @@ fileprivate func jsonToSchema(_ tool: String) -> OpenAIToolSchema {
     }
 }
 
-func getLocAuth(_ argv: [String]) async -> String {
-    guard let ticket = Ticket.shared.ticket, argv[0] == ticket else {
+// nil means the ticket is the current valid one
+func ticketRejection(for ticket: String) -> String? {
+    guard let current = Ticket.shared.ticket, ticket == current else {
         return "401 Unauthorized. Call get_auth to obtain a new ticket and retry. Never reuse an old ticket."
     }
+    return nil
+}
+
+func getLocAuth(_ argv: [String]) async -> String {
+    if let rejection = ticketRejection(for: argv[0]) { return rejection }
     return "latitude: \(LocManagerViewModel.shared.location.lat), longitude: \(LocManagerViewModel.shared.location.lon)"
+}
+
+func recenterMap(_ argv: [String]) async -> String {
+    if let rejection = ticketRejection(for: argv[0]) { return rejection }
+    // a model that omits or zeroes the arguments sends 0,0, which passes the validity check; nan and inf parse as numbers
+    guard let lat = Double(argv[1]), let lon = Double(argv[2]), lat.isFinite, lon.isFinite,
+          CLLocationCoordinate2DIsValid(CLLocationCoordinate2D(latitude: lat, longitude: lon)),
+          lat != 0 || lon != 0 else {
+        return "Invalid coordinates. Latitude and longitude must be plain decimal numbers in range and not both zero. Correct them and call recenter_map again."
+    }
+    LocManagerViewModel.shared.recenter(lat: lat, lon: lon)
+    return "The map is now centered on latitude \(lat), longitude \(lon)."
 }
 
 func getAuth(_ argv: [String]) async -> String {
@@ -78,6 +97,7 @@ struct Toolbox {
         self.tools = [
             "get_auth": Tool(schema: jsonToSchema("get_auth"), function: getAuth),
             "get_loc_auth": Tool(schema: jsonToSchema("get_loc_auth"), function: getLocAuth),
+            "recenter_map": Tool(schema: jsonToSchema("recenter_map"), function: recenterMap),
         ]
     }
 

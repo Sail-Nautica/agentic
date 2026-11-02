@@ -8,6 +8,7 @@ from http import HTTPStatus
 import httpx
 from httpx import RequestError, Response
 import logging
+import os
 import time
 import msgspec
 from msgspec import Raw, Struct, field, json, structs, UNSET, UnsetType
@@ -239,6 +240,7 @@ async def llmclear(request: Request):
             # calls reference turns without ON DELETE CASCADE
             await cur.execute("DELETE FROM calls WHERE turnID IN (SELECT turnID FROM turns WHERE appID = ?)", (openAIRequest.appID,))
             await cur.execute("DELETE FROM turns WHERE appID = ?", (openAIRequest.appID,))
+            await cur.execute("DELETE FROM tools WHERE appID = ?", (openAIRequest.appID,))
     except Exception as e:
         return _logClientErr(clientIP, HTTPStatus.INTERNAL_SERVER_ERROR, str(e))
 
@@ -442,7 +444,8 @@ async def weather(request: Request):
     return PlainTextResponse(result)
 
 # caps ticket lifetime; longer means fewer sign-ins but a wider window for misuse
-TICKET_MAX_LIFETIME = 180
+# tunable per run so playability and expiry can each be tested without editing code
+TICKET_MAX_LIFETIME = int(os.environ.get("TICKET_LIFETIME_SECONDS", 180))
 
 async def addagent(request: Request):
     clientIP = request.client.host if request.client else "Unknown"
