@@ -16,3 +16,11 @@ Not done, blocked on the owner or a person:
 - B4 deploy of `handlers.py` and restart of `harnessd` (needs the owner's go-ahead), hence no B3 check and none of the F9 tests; the app was not run, because launching it wipes this app's conversation on the shared server.
 - F1a stale-token investigation (a person must sign in and wait over an hour on a frozen baseline build); F1b only if it reproduces.
 - E-D phases, the reference city table, device observations.
+
+## B4 deploy (done 2026-11-02, with the owner's go-ahead)
+- Server: copied only `harnessd/handlers.py` (backup at /home/ubuntu/handlers.py.bak-20261102; the server's git tree is otherwise unchanged and shows handlers.py as modified). The diff against the backup is exactly the three edits (import os, tools-row delete, lifetime knob).
+- harnessd is a systemd service (harnessd.service, EnvironmentFile /home/ubuntu/.env.sys). Restarted: active, listening on 443.
+- Single test runner: a systemd drop-in /etc/systemd/system/harnessd.service.d/test-runner.conf sets RUNNERS_CONFIG=/home/ubuntu/runners.groq.toml (the repo's runners.toml with only the Groq runner; the local fallback stays as the last resort). The API keys and /home/ubuntu/.env.sys were not touched. To revert: delete the drop-in, `sudo systemctl daemon-reload`, `sudo systemctl restart harnessd`.
+- Lifetime knob left unset (default 180).
+- Check: POST /llmclear for a throwaway app ID returned 200 and the server log shows it, so the new third statement runs on the live schema (no rows existed for that ID).
+- NOT done: any run of the app. This Mac lists the iOS 27.0 simulator runtime but `simctl boot` fails with "runtime path not found: download the iOS 27.0 simulator runtime from Xcode Settings", so E-PRE-B, E-T1 and every other runtime test are blocked until the runtime is installed or a device is used.
