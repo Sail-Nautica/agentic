@@ -1,0 +1,14 @@
+# Elephant (E-C), round 2: verbatim prompt (message sent to the resumed session)
+
+Thank you for the strong first draft. Please produce a complete E-C v2 (the full plan, not a diff). Still no code, plain English, diagrams allowed; you may keep reading files, but do NOT read third-party or vendored library source (the course AGENTS.md "Opaque Dependencies" rule): reason from our call sites, public headers/docs and type stubs, and mark any claim you cannot verify that way as unverified.
+
+Owner answers (fixed):
+1. KEEP the tutorial extras (game picker, 20 Questions, role toggle, full transcript, Clear confirmation); the only addition is the map. IMPORTANT: this conflicts with the required hints area (it shows only the latest reply; new hints overwrite old ones) and possibly other required elements. Do not silently drop either side: keep every extra that does not contradict a required element, and for each one that does, state the conflict plainly in the plan, propose the smallest change that satisfies the requirement (for example how the kept transcript view and the single "current hints" area coexist, or which is shown where), and list it as a question for the owner. Re-check the do-not-build list against this decision (the Clear confirmation and other extras are then kept).
+2. Clear starts a new game immediately (wipe, then re-send the rules).
+3. Legacy sweep applies to new and touched code only; report baseline offenders without fixing them.
+4. First frame: a plain progress indicator, then the map already centered on the user once the first location fix arrives; the cached last-known location may be used for an instant first frame.
+Defaults I am choosing (state each in the plan so the owner can confirm): follow what the tutorial code already does for the first message unless it fails on some runner; system blue location dot allowed, city-level zoom; ticket lifetime from an environment variable read at startup with 180 s default; the tutorial's Keychain/biometric approach is accepted (as in HW2); no project-settings changes except the location permission text; a fresh marker at the start of each new round is allowed; keep the existing alert for errors; keep the tutorial tools registered; whitespace-only text is not "something to send"; test on whichever runners are available, device availability unknown.
+
+For the professor's stale-token item: the plan must say what evidence is shown (public header documentation plus a short run) and must not rely on reading the library's source.
+
+Output: the full E-C v2 (ordered steps with files/types reused, done-when, requirement or feedback item satisfied; how the map actually moves; how the LLM obtains the token; legacy checklist; do-not-build list), then only the clarifying questions that still need the owner, marked blocking or not.
