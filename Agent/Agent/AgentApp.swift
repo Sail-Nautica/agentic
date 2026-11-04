@@ -80,6 +80,7 @@ final class AppViewModel {
     func resetGame() async {
         isBusy = true
         defer { isBusy = false }
+        LocManagerViewModel.shared.recenterOnUser()
         await rein.llmClear(errMsg: Bindable(self).errMsg)
         showError = !errMsg.isEmpty
         conversation.removeAll()

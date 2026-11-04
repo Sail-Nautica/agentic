@@ -36,6 +36,12 @@ final class LocManagerViewModel {
         isPositioned = true
     }
 
+    // a new game takes the map back to the player; 0,0 means no fix has arrived yet, so there is nowhere to go back to
+    func recenterOnUser() {
+        guard location.lat != 0 || location.lon != 0 else { return }
+        recenter(lat: location.lat, lon: location.lon)
+    }
+
     // about 20 km across shows a whole city, which is what both callers want to see
     private func cityRegion(lat: CLLocationDegrees, lon: CLLocationDegrees) -> MapCameraPosition {
         .region(MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: lat, longitude: lon),
