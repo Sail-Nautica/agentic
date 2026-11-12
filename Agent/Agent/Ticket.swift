@@ -1,132 +1,169 @@
 import SwiftUI
 import LocalAuthentication
-import Security
 
-// Authorization ticket issued by harnessd. The Secure Enclave key behind the keychain
-// item never leaves the hardware; biometrics only gate reading and writing the stored
-// ticket, they add nothing to the security of Google sign-in.
 final class Ticket {
-    static let shared = Ticket()
-    private init() {}
+    static let shared = Ticket() // create one instance of the class to be shared
+    private init() {}            // and make the constructor private so no other
+                                 // instances can be created: hence a **singleton**
 
     var vm: AppViewModel?
-    var creator = ""
-    var expiration = Date(timeIntervalSince1970: 0)
-    private var _ticket: String?
 
+    // the ticket
+    var creator = ""
+    var expiration = Date(timeIntervalSince1970: 0.0)
+    private var _ticket: String?
     var ticket: String? {
         get { Date() > expiration ? nil : _ticket }
-        set { _ticket = newValue }
-    }
-
-    private static let expirationFormat: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss '+'SSSS"
-        return formatter
-    }()
-
-    private static let identity: [String: Any] = [
-        kSecClass as String: kSecClassGenericPassword,
-        kSecAttrDescription as String: "Ticket",
-    ]
-
-    private static func message(_ status: OSStatus) -> String {
-        SecCopyErrorMessageString(status, nil) as String? ?? "OSStatus \(status)"
-    }
-
-    // the biometric prompt blocks until the user answers, so keep it off the main actor
-    @concurrent
-    private static func copyItem(_ query: [String: Any]) async -> (OSStatus, [String: Any]?) {
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-        return (status, item as? [String: Any])
+        set(newValue) { _ticket = newValue }
     }
 
     func open(errMsg: Binding<String>, showOk: Binding<Bool>) async {
-        guard expiration == Date(timeIntervalSince1970: 0) else { return }
+        if expiration != Date(timeIntervalSince1970: 0.0) {
+            // not first launch
+            return
+        }
 
-        guard SecItemCopyMatching(Ticket.identity as CFDictionary, nil) == errSecSuccess else {
+        // check for ticket in KeyChain
+        var searchFor: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrDescription: "Ticket", // check existence only
+        ]
+
+        var searchStatus = SecItemCopyMatching(searchFor as CFDictionary, nil)
+        if searchStatus == errSecItemNotFound {
             errMsg.wrappedValue = "No previous Ticket found. Will acquire on sign in."
             showOk.wrappedValue = true
             return
         }
 
-        let context = LAContext()
+        let authContext = LAContext()
+
         #if targetEnvironment(simulator)
-        // the simulator keychain does not prompt, so simulate the biometric check
-        guard (try? await context.evaluatePolicy(.deviceOwnerAuthentication,
-                localizedReason: "To access ticket in Keychain.")) == true else {
-            errMsg.wrappedValue = "Biometric authentication failed. Will acquire on sign in."
-            showOk.wrappedValue = true
-            return
-        }
+        guard let _ = try? await authContext.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "to allow simulator to access KeyChain") else { errMsg.wrappedValue = "Open Keychain failed"; return }
         #endif
 
-        let (status, item) = await Ticket.copyItem(Ticket.identity.merging([
-            kSecReturnData as String: true,
-            kSecReturnAttributes as String: true,
-            kSecUseAuthenticationContext as String: context,
-        ]) { $1 })
-        guard status == errSecSuccess, let item else {
-            errMsg.wrappedValue = Ticket.message(status)
-            return
-        }
-
-        guard let data = item[kSecValueData as String] as? Data,
-              let stored = String(data: data, encoding: .utf8),
-              let label = item[kSecAttrLabel as String] as? String,
-              let storedExpiration = Ticket.expirationFormat.date(from: label) else {
-            delete(errMsg: errMsg)
-            errMsg.wrappedValue = "Invalid Ticket in Keychain. Will acquire on sign in."
-            showOk.wrappedValue = true
-            return
-        }
-
-        guard storedExpiration > Date() else {
-            errMsg.wrappedValue = "Stored Ticket has expired. Will acquire on sign in."
-            showOk.wrappedValue = true
-            return
-        }
-
-        _ticket = stored
-        expiration = storedExpiration
-        creator = item[kSecAttrCreator as String] as? String ?? ""
-    }
-
-    func save(errMsg: Binding<String>, showOk: Binding<Bool>) {
-        guard let ticket else { return }
-        let attributes: [String: Any] = [
-            kSecValueData as String: Data(ticket.utf8),
-            kSecAttrLabel as String: Ticket.expirationFormat.string(from: expiration),
-            kSecAttrCreator as String: creator,
+        // https://developer.apple.com/documentation/security/item-attribute-keys-and-values
+        searchFor = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrDescription: "Ticket",
+            kSecReturnData: true,
+            kSecReturnAttributes: true,
+            // Forces biometric authentication through the Secure Enclave hardware prompt
+            kSecUseAuthenticationContext: authContext
         ]
 
-        let status: OSStatus
-        if SecItemCopyMatching(Ticket.identity as CFDictionary, nil) == errSecSuccess {
-            status = SecItemUpdate(Ticket.identity as CFDictionary, attributes as CFDictionary)
-        } else {
-            guard let access = SecAccessControlCreateWithFlags(nil,
-                    kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly, .userPresence, nil) else {
-                errMsg.wrappedValue = "Cannot create Keychain access control. You will need to sign in again on relaunch."
-                return
-            }
-            status = SecItemAdd(Ticket.identity.merging(attributes) { $1 }
-                .merging([kSecAttrAccessControl as String: access]) { $1 } as CFDictionary, nil)
+        var itemRef: AnyObject?
+        searchStatus = SecItemCopyMatching(searchFor as CFDictionary, &itemRef)
+        guard searchStatus == errSecSuccess else {
+            errMsg.wrappedValue = "Ticket.open search: \(String(describing: SecCopyErrorMessageString(searchStatus, nil) as String? ?? "authentication failed"))"
+            return
         }
 
-        if status == errSecSuccess {
-            errMsg.wrappedValue = "Ticket saved"
+        let df = DateFormatter()
+        df.dateFormat="yyyy-MM-dd HH:mm:ss '+'SSSS"
+
+        if let item = itemRef as? NSDictionary,
+            let data = item[kSecValueData] as? Data,
+            let dateStr = item[kSecAttrLabel] as? String,
+            let ticketExp = df.date(from: dateStr),
+            let ticketCreator = item[kSecAttrCreator] as? String
+        {
+            creator = ticketCreator
+            if Date() >= ticketExp {
+                errMsg.wrappedValue = "Ticket from last session expired. Will re-acquire on sign in."
+            } else {
+                errMsg.wrappedValue = "Ticket available from last session."
+                ticket = String(data: data, encoding: .utf8)
+                expiration = ticketExp
+            }
             showOk.wrappedValue = true
         } else {
-            errMsg.wrappedValue = "\(Ticket.message(status)). You will need to sign in again on relaunch."
+            errMsg.wrappedValue = "Ticket found but invalid...deleting from KeyChain. Will re-acquire on sign in."
+            await delete(errMsg: errMsg)
         }
     }
 
-    // forces a fresh sign-in when harnessd rejects the current ticket
-    func delete(errMsg: Binding<String>) {
-        let status = SecItemDelete(Ticket.identity as CFDictionary)
-        if status != errSecSuccess && status != errSecItemNotFound {
-            errMsg.wrappedValue += Ticket.message(status)
+    func save(errMsg: Binding<String>, showOk: Binding<Bool>) async {
+        guard let ticketData = ticket?.data(using: .utf8) else {
+            // no ticket to save.
+            return
+        }
+
+        // check for ticket in KeyChain
+        var item: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrDescription: "Ticket", // Check existence only
+        ]
+
+        var opStatus = SecItemCopyMatching(item as CFDictionary, nil)
+
+        let authContext = LAContext() // push core security enforcement to iOS kernel and secure enclave processor
+
+        #if targetEnvironment(simulator)
+        guard let _ = try? await authContext.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "to allow simulator to access KeyChain") else { errMsg.wrappedValue = "Save Keychain failed"; return }
+        #endif
+
+        let df = DateFormatter()
+        df.dateFormat="yyyy-MM-dd HH:mm:ss '+'SSSS"
+        let expStr = df.string(from: expiration)
+
+        if opStatus == errSecSuccess {
+
+            item = [
+                kSecClass: kSecClassGenericPassword,
+                kSecAttrDescription: "Ticket",
+                // forces biometric authentication through the Secure Enclave hardware prompt
+                kSecUseAuthenticationContext: authContext
+            ]
+
+            let updates: [CFString: Any] = [
+                kSecValueData: ticketData,
+                kSecAttrLabel: expStr,
+                kSecAttrCreator: creator
+            ]
+
+            opStatus = SecItemUpdate(item as CFDictionary, updates as CFDictionary)
+
+        } else if opStatus == errSecItemNotFound {
+            let accessControl = SecAccessControlCreateWithFlags(
+                nil,
+                kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly,
+                .userPresence,  // triggers biometric/pin check
+                nil)!
+
+            item = [
+                kSecClass: kSecClassGenericPassword,
+                kSecAttrDescription: "Ticket",
+                kSecValueData: ticketData,          // ticket
+                kSecAttrLabel: expStr,
+                kSecAttrCreator: creator,
+                kSecAttrAccessControl: accessControl,  // requires biometric check
+                // forces biometric authentication through the Secure Enclave hardware prompt
+                kSecUseAuthenticationContext: authContext
+            ]
+
+            opStatus = SecItemAdd(item as CFDictionary, nil)
+        }
+
+       if (opStatus == errSecSuccess) {
+          errMsg.wrappedValue = "Ticket saved"
+          showOk.wrappedValue = true
+       } else {
+          errMsg.wrappedValue = "\(String(describing: SecCopyErrorMessageString(opStatus, nil) as String? ?? "Ticket save failed"))\nYou can use ticket, but will be asked to sign in again when Agent relaunch."
+       }
+    }
+
+    func delete(errMsg: Binding<String>) async {
+        let item: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrDescription: "Ticket",
+        ]
+
+        let delStatus = SecItemDelete(item as CFDictionary)
+        if (delStatus != 0) {
+            errMsg.wrappedValue += "\n\nTicket.delete: \(String(describing: SecCopyErrorMessageString(delStatus, nil)!))"
+        } else {
+            errMsg.wrappedValue += "Ticket: DELETED!"
         }
     }
 }

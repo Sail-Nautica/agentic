@@ -56,15 +56,19 @@ final class LocManager: NSObject, CLLocationManagerDelegate {
     override private init() {
         super.init()
 
+        // configure the location manager
         locManager.desiredAccuracy = kCLLocationAccuracyBest
         locManager.delegate = self
     }
 
     func startUpdates() {
         if locManager.authorizationStatus == .notDetermined {
+            // ask for user permission if undetermined
+            // Be sure to add 'Privacy - Location When In Use Usage Description' to
+            // Info.plist, otherwise location read will fail silently, with (lat/lon = 0)
             locManager.requestWhenInUseAuthorization()
         }
-
+    
         Task {
             do {
                 for try await update in CLLocationUpdate.liveUpdates() {

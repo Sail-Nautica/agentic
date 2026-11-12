@@ -8,26 +8,29 @@ from pathlib import Path
 import random
 import sys
 
-RUNNERS_CONFIG = Path(os.environ.get("RUNNERS_CONFIG") or Path(__file__).resolve().parent.parent / "runners.toml")
+RUNNERS_CONFIG = "/home/ubuntu/agentic/runners.toml"
 
 class LlmRunnerAPI(Struct):
     url: str
     key: str
+    
 
 class LlmRunner(Struct):
     api: LlmRunnerAPI
     model: str
     weight: float
     
+
 class RawRunner(Struct):
     api: str
     model: str
     weight: float
+    
 
 class RawRunners(Struct):
     apis: dict[str, 'LlmRunnerAPI'] = {}
     runners: list[RawRunner] = []
-
+    
 class LlmRunners:
     # The iterator that powers the `for runner in runners` loop:
     # to iterate through the runner array randomized per HTTP-request to load balance
@@ -55,7 +58,10 @@ class LlmRunners:
         print(f"Reading {RUNNERS_CONFIG}")
         
         # ingest runners config file
-        toml_bytes = Path(RUNNERS_CONFIG).read_bytes()
+        try:
+            toml_bytes = Path(RUNNERS_CONFIG).read_bytes()
+        except FileNotFoundError:
+            raise ValueError(f"Config file not found at {RUNNERS_CONFIG}")
             
         rawRunners = msgspec.toml.decode(toml_bytes, type=RawRunners)
     
@@ -85,6 +91,12 @@ class LlmRunners:
         self.runners: list[LlmRunner] = [
             LlmRunner(api=api, model=runner.model, weight=runner.weight)
             for runner in rawRunners.runners
+            # a "local" entry in runners would cause local to be 
+            # tried twice in iter() -- instead, the local field below 
+            # is the sole, always-last fallback representation
+            # (entry model/weight ignored).
+            if runner.api != "local"
+            # skips this runner if its API isn't in the (ACTIVE) apis
             if (api := apis.get(runner.api)) is not None
         ]
     

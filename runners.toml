@@ -1,16 +1,16 @@
 # `key` is the NAME of the env var holding the API key, never the key itself.
-# `url` is the full versioned base: handlers.py appends only "/chat/completions",
-# so providers that don't use a plain /v1 prefix (Gemini) are expressible here.
+# `url` is the unversioned base: handlers.py appends "/v1/chat/completions",
+# so Gemini's /v1beta/openai endpoint cannot be used as a runner.
 [apis.groq]
-url = "https://api.groq.com/openai/v1"
+url = "https://api.groq.com/openai"
 key = "GROQ_API_KEY"
 
 [apis.mistral]
-url = "https://api.mistral.ai/v1"
+url = "https://api.mistral.ai"
 key = "MISTRAL_API_KEY"
 
 [apis.cerebras]
-url = "https://api.cerebras.ai/v1"
+url = "https://api.cerebras.ai"
 key = "CEREBRAS_API_KEY"
 
 [apis.gemini]
@@ -18,13 +18,13 @@ url = "https://generativelanguage.googleapis.com/v1beta/openai"
 key = "GEMINI_API_KEY"
 
 [apis.openrouter]
-url = "https://openrouter.ai/api/v1"
+url = "https://openrouter.ai/api"
 key = "OPENROUTER_API_KEY"
 
 # "local" is special-cased: active with no env var as long as `url` is
 # non-empty, and appended as the last-resort fallback.
 [apis.local]
-url = "https://localhost:11433/v1"
+url = "https://localhost:11433"
 key = ""
 
 [[runners]]
