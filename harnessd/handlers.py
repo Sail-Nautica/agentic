@@ -92,14 +92,6 @@ def _logServerErr(clientIP: str, errmsg: str) -> PlainTextResponse:
     logger.warning(f"{HTTPStatus.INTERNAL_SERVER_ERROR} | {clientIP} |")
     return PlainTextResponse(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, content=errmsg)
 
-# Setup-verification endpoint. Encoded once at import: the payload is constant,
-# so there is nothing to serialize per request.
-TOP = json.encode({"message": "UM EECS agentic harnessd"})
-
-async def top(request: Request):
-    return Reply(TOP, media_type="application/json")
-
-
 async def llmprompt(request: Request):
     clientIP = request.client.host if request.client else "Unknown"
     try:
