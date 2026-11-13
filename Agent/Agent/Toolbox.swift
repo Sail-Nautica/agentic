@@ -30,7 +30,6 @@ struct OpenAIParamProp: Codable {
 }
 
 private let Json = JSONDecoder()
-
 fileprivate func jsonToSchema(_ tool: String) -> OpenAIToolSchema {
     guard let url = Bundle.main.url(forResource: tool, withExtension: "json"),
             let data = try? Data(contentsOf: url) else {
@@ -43,21 +42,17 @@ fileprivate func jsonToSchema(_ tool: String) -> OpenAIToolSchema {
     }
 }
 
-// nil means the ticket is the current valid one
-func ticketRejection(for ticket: String) -> String? {
-    guard let current = Ticket.shared.ticket, ticket == current else {
-        return "401 Unauthorized. Call get_auth to obtain a new ticket and retry. Never reuse an old ticket."
-    }
-    return nil
-}
-
-func getLocAuth(_ argv: [String]) async -> String {
-    if let rejection = ticketRejection(for: argv[0]) { return rejection }
-    return "latitude: \(LocManagerViewModel.shared.location.lat), longitude: \(LocManagerViewModel.shared.location.lon)"
+func getLocAuth(_ argv: [String]) async -> String {     //"Ann Arbor"
+    Ticket.shared.ticket == argv[0]
+    ? "latitude: \(LocManagerViewModel.shared.location.lat), longitude: \(LocManagerViewModel.shared.location.lon)"
+    : "401 Unauthorized. Ask the user if they want to try again. If so, you **MUST** call the get_auth tool again to get a fresh new ticket and retry the operation. DO NOT reuse any ticket in context/history that came before this message."
 }
 
 func recenterMap(_ argv: [String]) async -> String {
-    if let rejection = ticketRejection(for: argv[0]) { return rejection }
+    // same ticket check and 401 reply as getLocAuth, so the model handles a rejected ticket identically
+    guard Ticket.shared.ticket == argv[0] else {
+        return "401 Unauthorized. Ask the user if they want to try again. If so, you **MUST** call the get_auth tool again to get a fresh new ticket and retry the operation. DO NOT reuse any ticket in context/history that came before this message."
+    }
     // a model that omits or zeroes the arguments sends 0,0, which passes the validity check; nan and inf parse as numbers
     guard let lat = Double(argv[1]), let lon = Double(argv[2]), lat.isFinite, lon.isFinite,
           CLLocationCoordinate2DIsValid(CLLocationCoordinate2D(latitude: lat, longitude: lon)),
@@ -69,18 +64,26 @@ func recenterMap(_ argv: [String]) async -> String {
 }
 
 func getAuth(_ argv: [String]) async -> String {
-    if let ticket = Ticket.shared.ticket { return "Authorization ticket is: \(ticket)" }
+    repeat {
+        if let ticket = Ticket.shared.ticket {
+            return "Authorization ticket is: \(ticket)"
+        }
 
-    // suspend the tool call until SigninView is dismissed
-    await withUnsafeContinuation { continuation in
-        Ticket.shared.vm?.signinCompletion = { continuation.resume() }
-        Ticket.shared.vm?.getSignedin = true
-    }
+        if let vm = Ticket.shared.vm {
+            await withUnsafeContinuation { getAuthAt in
+                vm.signinCompletion = { () -> Void in
+                    getAuthAt.resume()
+                }
+                vm.getSignedin = true
+            }
+            // here be getAuthAt
+        }
 
-    guard let ticket = Ticket.shared.ticket else {
-        return "401 Unauthorized. Complete the prompt by informing user that task cannot be completed due to failed authorization."
-    }
-    return "Authorization ticket is: \(ticket)"
+        if Ticket.shared.ticket == nil { // failed to sign in, or vm is nil
+                                         // or is currently signing in?
+            return "401 Unauthorized. Complete the prompt by informing user that task cannot be completed due to failed authorization."
+        }
+    } while true
 }
 
 typealias ToolFunction = ([String]) async -> String
@@ -105,7 +108,6 @@ struct Toolbox {
         return tools.values.map { $0.schema }
     }
 
-    // nil means the tool is not resident on this device
     func invoke(function: OpenAIFunction) async -> String? {
         guard let name = function.name, let tool = tools[name] else { return nil }
         guard let argsJson = function.arguments,
@@ -114,6 +116,7 @@ struct Toolbox {
             return "bad tool arguments JSON"
         }
 
+        // get args in parameters.required order, they may arrive out of order from the back end
         let argv: [String] = (tool.schema.function.parameters?.required ?? []).map { label in
             switch args[label] {
             case let value as String:   return value

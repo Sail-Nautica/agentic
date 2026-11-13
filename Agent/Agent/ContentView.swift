@@ -10,25 +10,48 @@ import MapKit
 
 struct SubmitButton: View {
     @Environment(AppViewModel.self) private var vm
-
-    private var hasContent: Bool { !vm.userDraft.allSatisfy(\.isWhitespace) }
+    @State private var isSending = false
 
     var body: some View {
         Button {
-            let user = vm.userDraft
-            vm.userDraft = ""
+            isSending = true
+            vm.isBusy = true
 
-            Task { await vm.sendTurn(system: "", user: user) }
-
+            let chat = Chat(content: vm.message)
+            vm.conversation.append(chat)
+            
+            // pass chat to harness in an array of `messages`
+            // but Swift encoder cannot serialize @Observable hidden 
+            // variable correctly (_content in this case) so must 
+            // manually convert the hidden Chat._content to Message.content
+            let messages = [Message(role: chat.role, content: chat.content)]   
+            
+            // prepare completion placeholder
+            let completion = Chat(role: "assistant",
+                                content: "", timestamp: "") // placeholder for assistant's streaming completion
+            vm.conversation.append(completion)
+            
+            Task (priority: .background){
+                await vm.rein.llmTools(messages, completion: completion, errMsg: Bindable(vm).errMsg)                
+                // cleanup
+                vm.message = ""
+                isSending = false
+                vm.isBusy = false
+                vm.showError = !vm.errMsg.isEmpty
+            }
         } label: {
-            if vm.isBusy {
-                ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .secondary)).padding(10)
+            if isSending {
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle(tint: .secondary))
+                    .padding(10)
             } else {
-                Image(systemName: "paperplane.fill").foregroundColor(hasContent ? .yellow : .gray).padding(10)
+                Image(systemName: "paperplane.fill")
+                    .foregroundColor(vm.message.isEmpty ? .gray : .yellow)
+                    .padding(10)
             }
         }
-        .disabled(vm.isBusy || !hasContent)
-        .background(Color(vm.isBusy || !hasContent ? .secondarySystemBackground : .systemBlue))
+        .disabled(isSending || vm.message.isEmpty || vm.isBusy)
+        .background(Color(isSending || vm.message.isEmpty ? .secondarySystemBackground : .systemBlue))
         .clipShape(Circle())
         .padding(.trailing)
     }
@@ -68,58 +91,63 @@ struct MapArea: View {
 }
 
 struct ContentView: View {
-    @FocusState private var messageInFocus: Bool // tap background to dismiss
+    @FocusState private var messageInFocus: Bool // tap background to dismiss kbd
     @Environment(AppViewModel.self) private var vm
 
     var body: some View {
         VStack {
             MapArea()
 
-            VStack {
-                if let hint = vm.hint {
-                    ScrollView {
-                        Text(hint.content.trimmingCharacters(in: .whitespacesAndNewlines))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 16)
-                    }
-                    .frame(maxHeight: 160)
+            if let hint = vm.hint {
+                ScrollView {
+                    Text(hint.content.trimmingCharacters(in: .whitespacesAndNewlines))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
                 }
-
-                HStack(alignment: .bottom) {
-                    TextField(vm.userInstruction, text: Bindable(vm).userDraft)
-                        .focused($messageInFocus)
-                        .textFieldStyle(.roundedBorder)
-                        .cornerRadius(20)
-                        .shadow(radius: 2)
-                        .backgroundStyle(Color(.clear))
-                        .border(Color(.clear))
-                    ClearButton()
-                    SubmitButton()
-                }
-                .padding(EdgeInsets(top: 0, leading: 20, bottom: 8, trailing: 0))
+                .frame(maxHeight: 160)
             }
-            .contentShape(.rect)
-            .onTapGesture { messageInFocus = false } // dismiss only, and never from a tap on the map
+            
+            HStack (alignment: .bottom) {
+                TextField(vm.instruction, text: Bindable(vm).message)
+                    .focused($messageInFocus) // to dismiss keyboard
+                    .textFieldStyle(.roundedBorder)
+                    .cornerRadius(20)
+                    .shadow(radius: 2)
+                    .background(Color(.clear))
+                    .border(Color(.clear))
+
+                ClearButton()
+                SubmitButton()
+            }
+            .padding(EdgeInsets(top: 0, leading: 20, bottom: 8, trailing: 0))
+        }
+        .contentShape(.rect)
+        .onTapGesture {
+            messageInFocus.toggle()
         }
         .task {
             // app-launch initialization: same wipe-then-rules start as Clear, so a relaunch never stacks on an old game
             guard vm.conversation.isEmpty, !vm.isBusy else { return }
             await vm.resetGame()
         }
-        .alert(vm.showError ? "LLM Error" : "Advisory",
-               isPresented: Binding(get: { vm.showError || vm.showOk },
-                                    set: { if !$0 { vm.showError = false; vm.showOk = false } })) {
+            .alert(vm.showError ? "LLM Error" : "Advisory", isPresented: Binding<Bool>(
+                get: { vm.showError || vm.showOk },
+                set: { _ in
+                    vm.showError = false
+                    vm.showOk = false
+                }
+            )) {
                 Button("OK") {
                     vm.errMsg = ""
                 }
             } message: {
                 Text(vm.errMsg)
             }
-        .sheet(isPresented: Bindable(vm).getSignedin) {
-            SigninView(isPresenting: Bindable(vm).getSignedin)
-                .presentationDetents([.fraction(0.25)])
-                .presentationDragIndicator(.hidden)
-                .interactiveDismissDisabled()
-        }
+            .sheet(isPresented: Bindable(vm).getSignedin) {
+                SigninView(isPresenting: Bindable(vm).getSignedin)
+                    .presentationDetents([.fraction(0.25)])
+                    .presentationDragIndicator(.hidden)
+                    .interactiveDismissDisabled()
+            }
     }
 }
