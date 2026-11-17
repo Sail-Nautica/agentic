@@ -389,3 +389,6 @@ vendor/
 id_rsa*
 id_ed25519*
 *.kdbx
+
+# fastembed model weights downloaded at harnessd startup
+harnessd/fastembed-cache/

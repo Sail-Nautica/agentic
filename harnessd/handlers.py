@@ -1,5 +1,6 @@
 from __future__ import annotations # must be the first line of the file
 import aiosqlite
+import asyncio
 from collections.abc import AsyncGenerator
 from enum import IntEnum, auto
 from sse_starlette.sse import EventSourceResponse
@@ -8,21 +9,33 @@ from http import HTTPStatus
 import httpx
 from httpx import RequestError, Response
 import logging
-import msgspec
-from msgspec import Raw, Struct, field, json, structs, UNSET, UnsetType
+from msgspec import DecodeError, Raw, Struct, ValidationError, field, json, structs, UNSET, UnsetType
+import sqlite3
+import sys
 from starlette.background import BackgroundTask
 from starlette.requests import Request
 from starlette.responses import PlainTextResponse, Response, StreamingResponse
+from structured import Capture, CompletionLexer, LexTarget
+from pensieve import _recallBlock, _recallMessage, _promptPlaintext, _embedText, _blobFromUnit, MAX_RECALL_ITEM_CHARS
+
+MAX_HISTORY_BYTES = 64_000  # replayed-window budget in JSON bytes (~16K tokens)
+MAX_EMBED_ITEM_CHARS = 4000 # caps the completion fallback in end-of-stream outcome triage
+
+EMBED_CONCURRENCY = 4                   # max number of outstanding embeddings
+_embedGate = asyncio.Semaphore(EMBED_CONCURRENCY)
+_embedTasks: set[asyncio.Task] = set()  # for shutdown cleanup
 
 class Message(Struct, omit_defaults=True):
 	role: str
 	content: str | None
 
-class OpenAIRequest(Struct, omit_defaults=True):
+class OpenAIRequest(Struct, omit_defaults=True, kw_only=True):
 	appID:    str | UnsetType
 	model: str
 	messages: Raw
 	stream: bool = False
+	max_tokens: int | None = None
+	response_format: Raw = Raw()
 
 class OpenAIDelta(Struct):
     content:           str | None = None
@@ -31,9 +44,12 @@ class OpenAIDelta(Struct):
 
 class OpenAIChoice(Struct):
     delta:         OpenAIDelta = field(default_factory=OpenAIDelta)
+    finish_reason: str | None = None
 
 class OpenAIResponse(Struct):
-    choices: list[OpenAIChoice] = []
+    choices: list[OpenAIChoice] = []  # so as to automatically skip control messages
+    model: str | None = None          # echoed to front-end when creating the synthetic OpenAIResponse
+                                      # wrapper for structured output completion
 
 class SseEvent(IntEnum):
     Message = auto()
@@ -52,6 +68,10 @@ def _logInfo(clientIP: str, runner: str, model: str, errcode: int, msg: str):
 def _logClientErr(clientIP: str, errcode: HTTPStatus, errmsg: str) -> PlainTextResponse:
     logger.warning(f"{errcode.value} | {clientIP} |")
     return PlainTextResponse(status_code=errcode, content=errmsg)
+
+def _logServerErr(clientIP: str, errmsg: str) -> PlainTextResponse:
+    logger.warning(f"{HTTPStatus.INTERNAL_SERVER_ERROR} | {clientIP} |")
+    return PlainTextResponse(status_code=HTTPStatus.INTERNAL_SERVER_ERROR, content=errmsg)
 
 # Setup-verification endpoint. Encoded once at import: the payload is constant,
 # so there is nothing to serialize per request.
@@ -134,79 +154,155 @@ async def _routePrompt(request: Request, openAIRequest: OpenAIRequest) -> Respon
     return None
 
 
-async def llmchat(request: Request):
+async def llmsearch(request: Request):
     clientIP = request.client.host if request.client else "Unknown"
     try:
         openAIRequest = json.decode(await request.body(), type=OpenAIRequest)
-    except Exception:
-        return _logClientErr(clientIP, HTTPStatus.BAD_REQUEST, "Invalid JSON body.")
+    except ValidationError as err:
+        return _logClientErr(clientIP, HTTPStatus.UNPROCESSABLE_ENTITY, f"Invalid request body: {err}")
+    except DecodeError as err:
+        return _logClientErr(clientIP, HTTPStatus.BAD_REQUEST, f"Malformed JSON body: {err}")
 
-    rwdb = request.app.state.rwdb
+    if openAIRequest.stream is not True:
+        return _logClientErr(clientIP, HTTPStatus.UNPROCESSABLE_ENTITY, "stream must be true")
+
+    rwdb: aiosqlite.Connection = request.app.state.rwdb
 
     try:
         # save prompt to db in an atomic transaction
-        async with rwdb.cursor() as cur:
-            await cur.execute(
-                "INSERT INTO turns (appID, prompt) VALUES (?, ?)",
-                (None, # openAIRequest.appID, # for testing SSE error event
-                    openAIRequest.messages),
-            )
-            turnID = cur.lastrowid
+        turnID = (await rwdb.execute(
+            "INSERT INTO turns (appID, prompt) VALUES (?, ?)",
+            (openAIRequest.appID,
+                openAIRequest.messages),
+        )).lastrowid
     except Exception as e:
-        return _logClientErr(clientIP, HTTPStatus.INTERNAL_SERVER_ERROR, str(e))
+        return _logServerErr(clientIP, str(e))
 
+    prompt = _promptPlaintext(openAIRequest.messages)[:MAX_RECALL_ITEM_CHARS]
+
+    isStructured = not openAIRequest.response_format or bytes(openAIRequest.response_format) == b"null"
     try:
-        # reconstruct openAIRequest to be sent to LLM runner--add context:
-        # retrieve all messages belonging to appID and
-        # insert them as one Messages array of openAIRequest.messages
-        history = await _retrieveHistory(rwdb, openAIRequest.appID)
-        openAIRequest.messages = Raw(json.encode(history))
-    except Exception as e:
-        return _logClientErr(clientIP, HTTPStatus.INTERNAL_SERVER_ERROR, str(e))
+        
+        # create recall block with the prompt for semantic search
+        recall, historyFloor = await _recallBlock(request.app.state, rwdb,
+            openAIRequest.appID, prompt)
 
-    # forward prompt to LLM runner
-    response = await _routePrompt(request, openAIRequest)
+        # reconstruct history, with the current prompt appended
+        history = await _retrieveHistory(rwdb, openAIRequest.appID, historyFloor, turnID)
+
+        # add recall block to the front of history, _recallMessage() will set "role: system" on the message
+        if recall:
+            history.insert(0, _recallMessage(recall)) # one memmove of N pointers
+
+        # attach recall+history as context+prompt to openAIRequest
+        openAIRequest.messages = Raw(json.encode(history))
+
+        if isStructured:
+            # retrieve JSON schema to be used with response_format
+            openAIRequest.response_format = Raw(request.app.state.structured)
+        # forward prompt to LLM runner (with response_format specified)
+        response = await _routePrompt(request, openAIRequest)
+        
+    except Exception as e:
+        try:
+            await rwdb.execute("UPDATE turns SET completed = 0 WHERE turnID = ?", (turnID,))
+        except Exception as degradeErr:
+            print(f"turn {turnID} degrade write failed: {degradeErr}", file=sys.stderr)
+        return _logServerErr(clientIP, str(e))
+
+    # No available runner
     if response is None:
+        try:
+            await rwdb.execute("UPDATE turns SET completed = 0 WHERE turnID = ?", (turnID,))
+        except Exception as degradeErr:
+            print(f"turn {turnID} degrade write failed: {degradeErr}", file=sys.stderr)
         return _logClientErr(clientIP, HTTPStatus.SERVICE_UNAVAILABLE,
             "All available LLM providers are rate limited or offline.")
 
-    async def _conveyCompletion(response: Response) -> AsyncGenerator[dict[str, str]]:
+    acc = SseAccumulator()
 
-        # accumulate completion (and reasoning) tokens and forward token stream to front-end agent
-        acc = SseAccumulator()
-        async for event in _yieldSse(response, acc):
-            yield event # convey LLM completion stream to client
+    return EventSourceResponse(_yieldSse(response, acc, isStructured),
+        headers= { "Content-Type": "text/event-stream" },
+        background=BackgroundTask(_writeTurnResult, request.app.state, rwdb, turnID, acc, prompt))
 
-        # after the stream ends, save the accumulated completion
-        completion = "".join(acc.tokens)
-        reasoning = "".join(acc.reasoning)
-        if completion or reasoning:
-            try:
-                async with rwdb.cursor() as cur:
-                    await cur.execute(
-                        "UPDATE turns SET completion = NULLIF(?, ''), reasoning = CASE WHEN ? = '' THEN reasoning ELSE COALESCE(reasoning || ' ', '') || ? END WHERE turnID = ?",
-                        (completion, reasoning, reasoning, turnID),
-                    )
-            except Exception as e:
-                yield {"event": "error", "data": json.encode(str(e)).decode()}
+def _isBusy(err: Exception) -> bool:
+    return isinstance(err, sqlite3.OperationalError) and "database is locked" in str(err)
 
-    return EventSourceResponse(_conveyCompletion(response),
-        headers= { "Content-Type": "text/event-stream" })
+async def _writeTurnResult(state, rwdb: aiosqlite.Connection, turnID: int, acc: SseAccumulator, prompt: str) -> None:
+    acc.completion.flushPending()
+    acc.summary.flushPending()
+    completion = "".join(acc.completion.text)
+    summary = "".join(acc.summary.text)
+    reasoning = "".join(acc.reasoning)
+    completed = 1 if acc.finishReason == "stop" else 0
+    for attempt in range(5):
+        try:
+            await rwdb.execute(
+                "UPDATE turns SET completion = NULLIF(?, ''), summary = NULLIF(?, ''), reasoning = NULLIF(?, ''), completed = ? WHERE turnID = ?",
+                (completion, summary, reasoning, completed, turnID),
+            )
+            break
+        except Exception as e:
+            if not _isBusy(e) or attempt == 4:
+                print(f"turn {turnID} stream-end write failed: {e}", file=sys.stderr)
+                return
+                
+    if completed == 1 and state.runners.embed is not None and state.vectorOptions is not None:
+        text = summary.strip()
+        if not text:
+            if len(completion) > MAX_EMBED_ITEM_CHARS:
+                print(f"turn {turnID}: no summary; embedding the first "
+                      f"{MAX_EMBED_ITEM_CHARS} of {len(completion)} chars", file=sys.stderr)
+            text = completion[:MAX_EMBED_ITEM_CHARS]
+
+        if text and prompt:
+            embedTask = asyncio.get_running_loop().create_task(
+                _embedTurnText(state, turnID, text))
+            _embedTasks.add(embedTask)
+            embedTask.add_done_callback(_embedTasks.discard)
+
+async def _embedTurnText(state, turnID: int, text: str) -> None:
+    try:
+        async with _embedGate:
+            embedding = await _embedText(state, text)
+        await state.rwdb.execute(
+            "UPDATE turns SET embedding = ? WHERE turnID = ?",
+            (_blobFromUnit(embedding), turnID),
+        )
+        state.snapshotDirty = True
+    except Exception as e:
+        print(f"turn embedding failed for turn {turnID}: {e}", file=sys.stderr)
         
 class SseAccumulator(Struct):
     reasoning:     list[str] = field(default_factory=list)
-    tokens:        list[str] = field(default_factory=list)
+    completion:    Capture    = field(default_factory=Capture)
+    summary:       Capture    = field(default_factory=Capture)
+    finishReason:  str | None = None
+    model:         str | None = None
+    lexer:         CompletionLexer = field(default_factory=CompletionLexer)
+
+def _textPacket(text: str, model: str | None) -> str:
+    packet: dict[str, object] = {"choices": [{"delta": {"content": text}}]}
+    if model:
+        packet["model"] = model
+    return json.encode(packet).decode()
 
 async def _yieldSse(
-    # yield clean SSE event (key:value line) to agent, accumulate content deltas
-    # and assemble tool call deltas.
     response: Response,
     acc: SseAccumulator,
+    isStructured: bool,
 ) -> AsyncGenerator[dict[str, str]]:
     sseEvent = SseEvent.Message
     eventName = ''
-    accTokens = acc.tokens.append
-    accReasoning = acc.reasoning.append
+    accCompletion = acc.completion.text.append
+    accReasoning = acc.reasoning.append    
+
+    # incremental structured output decoding
+    def sink(target: LexTarget, data: str) -> None:
+        if target is LexTarget.Completion:
+            acc.completion.push(data)
+        else:
+            acc.summary.push(data)
 
     try:
         async for line in response.aiter_lines():
@@ -239,28 +335,59 @@ async def _yieldSse(
                 if sseEvent == SseEvent.Message:
 
                     try:
-                        # OpenAI's `/v1/chat/completions` API requires that
-                        # a serialized JSON object follows a `data:` tag.
                         openAIResponse = json.decode(tagline, type=OpenAIResponse)
+                        suppressTagline = False
+                        if openAIResponse.model:
+                            acc.model = openAIResponse.model
                         if openAIResponse.choices:
-                            # OpenAI defaults to generating only one completion choice
-                            # when the 'n' parameter is not included in OpenAIRequest
-                            delta = openAIResponse.choices[0].delta
-                            # the following three fields usage should be mutually exclusive
-                            if delta.content:
-                                # assemble response tokens into full completion
-                                accTokens(delta.content)
-                            elif delta.reasoning_content:
-                                # some models (e.g., Qwen, Deepseek) stream their reasoning
-                                accReasoning(delta.reasoning_content)
-                            elif delta.reasoning:
-                                accReasoning(delta.reasoning)
+                            choice = openAIResponse.choices[0]
+                            if choice.finish_reason:
+                                # terminal signal: providers send it on the final content
+                                # chunk or a trailing empty-delta chunk; last write wins
+                                acc.finishReason = choice.finish_reason
+                            delta = choice.delta
+                            if isStructured and delta.content:
+
+                                suppressTagline = True
+                                if acc.lexer.fallback:
+                                    accCompletion(delta.content)
+                                    yield {"data": _textPacket(delta.content, acc.model)}
+                                else:
+                                    mark = len(acc.completion.text)
+                                    fell = acc.lexer.feed(delta.content, sink)
+                                    spansEnd = len(acc.completion.text)
+
+                                    if fell is not None:
+                                        flushedBackslash = acc.completion.flushPending()
+                                        acc.summary.flushPending()
+                                        accCompletion(fell)
+
+                                    if spansEnd > mark:
+                                        yield {"data": _textPacket("".join(acc.completion.text[mark:spansEnd]), acc.model)}
+                                    if fell is not None:
+                                        if flushedBackslash:
+                                            yield {"data": _textPacket("\\", acc.model)}
+                                        yield {"event": "error", "data": json.encode("structured output schema violation; passing raw text through").decode()}
+                                        yield {"data": _textPacket(fell, acc.model)}
+
+                            else:
+
+                                # the following three fields usage should be mutually exclusive
+                                if delta.content:
+                                    # assemble response tokens into full completion
+                                    accCompletion(delta.content)
+                                elif delta.reasoning_content:
+                                    # some models (e.g., Qwen, Deepseek) stream their reasoning
+                                    accReasoning(delta.reasoning_content)
+                                elif delta.reasoning:
+                                    accReasoning(delta.reasoning)
+
+                        # convey LLM completion stream to client:
+                        # yield clean SSE event (key:value line)  
+                        if not suppressTagline:
+                            yield {"data": tagline}
                     except Exception as e:
                         yield {"event": "error", "data": json.encode(str(e)).decode()}
-
-                    # convey LLM completion stream to client:
-                    # yield clean SSE event (key:value line)
-                    yield {"data": tagline}
 
                 else:
                     # silent passthrough non-Message events, should not happen with
@@ -276,6 +403,17 @@ async def _yieldSse(
                     case _:
                         sseEvent = SseEvent.Unknown
             
+        # withheld backslash from any split escape flushes when the stream ends
+        if acc.completion.flushPending():
+            yield {"data": _textPacket("\\", acc.model)}
+        acc.summary.flushPending()
+    except httpx.HTTPError as e:
+        # flush any withheld escape backslash first before the error
+        if acc.completion.flushPending():
+            yield {"data": _textPacket("\\", acc.model)}
+        acc.summary.flushPending()
+        # yield upstream read fail as SSE error event
+        yield {"event": "error", "data": json.encode(f"upstream read failed: {e}").decode()}
     finally:
         await response.aclose()
 
@@ -285,25 +423,43 @@ class Turn(Struct):
     reasoning:  str | None
     completion: str | None
 
-async def _retrieveHistory(rwdb: aiosqlite.Connection, appID: str) -> list[Message]:
-    # retrieve full message history by appID, ordered by insertion,
-    # push them all into one Message array and return it
+async def _retrieveHistory(rwdb: aiosqlite.Connection, appID: str, minTurnID: int, currentTurnID: int) -> list[Raw]:
+
     async with rwdb.execute(
-        "SELECT turnID, prompt, reasoning, completion FROM turns WHERE appID = ? ORDER BY turnID ASC",
-        (appID,)
+        "SELECT turnID, length(prompt) + COALESCE(length(reasoning), 0) + COALESCE(length(completion), 0)"
+        " FROM turns"
+        " WHERE appID = ? AND turnID >= ? AND (turnID = ? OR completed = 1)"
+        " ORDER BY turnID ASC",
+        (appID, minTurnID, currentTurnID)
+    ) as cur:
+        sizes = list(await cur.fetchall())
+
+    total = sum(size for _, size in sizes)
+    drop = 0
+    while drop + 1 < len(sizes) and total > MAX_HISTORY_BYTES:
+        total -= sizes[drop][1]
+        drop += 1
+
+    survivors = [row[0] for row in sizes[drop:]]
+    async with rwdb.execute(
+        "SELECT turnID, prompt, reasoning, completion FROM turns"
+        " WHERE turnID IN (SELECT value FROM json_each(?))"
+        " ORDER BY turnID ASC",
+        (json.encode(survivors).decode(),)
     ) as cur:
         turns = [Turn(*row) for row in await cur.fetchall()]
 
-    # create Messages array from prompt messages and reasoning and completion if present
-    history: list[Message] = []
+    history: list[Raw] = []
     for turn in turns:
-        if turn.prompt: # deserialize prompt into Message array and pushed to history
-            history.extend(json.decode(turn.prompt, type=list[Message]))
+        
+        if turn.prompt:
+            try:
+                history.extend(json.decode(turn.prompt, type=list[Raw]))
+            except DecodeError:
+                pass
 
-        if turn.completion:
-            # if reasoning present, prepend it to completion
-            content = (turn.reasoning + "\n\n" + turn.completion) if turn.reasoning else turn.completion
-            history.append(Message(role="assistant", content=content))
-        # else, current turn, no assistant reply yet, not an error
+        if turn.completion or turn.reasoning:
+            content = (turn.reasoning + "\n\n" + turn.completion) if turn.reasoning and turn.completion else (turn.completion or turn.reasoning)
+            history.append(Raw(json.encode(Message(role="assistant", content=content))))
+
     return history
-    

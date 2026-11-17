@@ -24,9 +24,23 @@ class RawRunner(Struct):
     model: str
     weight: float
 
+class RawEmbed(Struct):
+    dim: int
+    api: str | None = None
+    model: str | None = None
+    local: str | None = None
+
+# to hold options for cloud or local runners
+class EmbedRunner(Struct):
+    api: LlmRunnerAPI | None
+    model: str
+    dim: int
+    local: str | None = None
+
 class RawRunners(Struct):
     apis: dict[str, 'LlmRunnerAPI'] = {}
     runners: list[RawRunner] = []
+    embed: RawEmbed | None = None
 
 class LlmRunners:
     # The iterator that powers the `for runner in runners` loop:
@@ -41,7 +55,7 @@ class LlmRunners:
         '''
         scored = sorted( # sort ascending by score
             self.runners,
-            key=lambda r: -math.log(random.random()) / (r.weight if r.weight > 0.0 else 1e-9)
+            key=lambda r: -math.log(1.0 - random.random()) / (r.weight if r.weight > 0.0 else 1e-9)
         )
         
         if self.local:
@@ -96,3 +110,30 @@ class LlmRunners:
                 model="", # let agent set
                 weight=1.0
             )
+
+        self.embed: EmbedRunner | None = None
+        rawEmbed = rawRunners.embed
+        if rawEmbed is not None and rawEmbed.dim > 0:
+            if rawEmbed.local:
+                if rawEmbed.api or rawEmbed.model:
+                    print("Embed runner local model: ignoring api/model", file=sys.stderr)
+                self.embed = EmbedRunner(
+                    api=None,
+                    model="",
+                    dim=rawEmbed.dim,
+                    local=rawEmbed.local
+                )
+                print(f"Embed runner ACTIVE: {rawEmbed.local} (dim {rawEmbed.dim})", file=sys.stderr)
+            elif rawEmbed.model:
+                embedApi = apis.get(rawEmbed.api)
+                if embedApi is None:
+                    print(f"Embed runner INACTIVE: unknown or inactive api '{rawEmbed.api}'", file=sys.stderr)
+                else:
+                    self.embed = EmbedRunner(
+                        api=embedApi,
+                        model=rawEmbed.model,
+                        dim=rawEmbed.dim
+                    )
+                    print(f"Embed runner ACTIVE: {rawEmbed.model} (dim {rawEmbed.dim})", file=sys.stderr)
+        if self.embed is None:
+            print("Embed runner INACTIVE: semantic recall disabled", file=sys.stderr)

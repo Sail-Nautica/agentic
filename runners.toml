@@ -41,3 +41,33 @@ weight = 0.8
 api = "mistral"
 model = "mistral-large-latest"
 weight = 0.6
+
+[embed]
+# Local variant: an ONNX model built into harnessd. 
+#`local` wins whenever it is set; api and model fields ignored if specified
+local = "BAAI/bge-small-en-v1.5"
+dim = 384           # must match the model's embedding dimension
+
+# Cloud based: the embedding API is OpenAI-compatible 
+# /v1/embeddings POST to the same url used by LlmRunner
+
+# api = "mistral"   # a key for [apis] listing its url and api key env var
+# model = "mistral-embed"
+# dim = 1024        # the model's embedding dimension
+# Free tier: 1B tokens/month, but 1 req/sec (RPS) vs our 
+# default usage of up to 4 concurrent requests
+
+# api = "nvidia"
+# model = "baai/bge-m3"
+# dim = 1024
+# Free tier: ~40 RPM; tighter than mistral's 1 RPS, but maybe suitable
+# if you expect back-to-back embeddings, but not more than 40 embeddings per minute.
+# Don't use the nv-embedqa-e5-v5 model. It requires "input_type" to specify
+# "passage", to generate embedding, or "query"; which our code is not set up to do.
+
+# api = "gemini"
+# model = "gemini-embedding-001"
+# dim = 3072
+# Free tier: tightest daily quota (RPD). Our code is not set up 
+# to choose output_dimensionality and the full 3072 dimensions will
+# result in large (4xdim) vectors to be stored in your db.
