@@ -8,7 +8,7 @@ import SwiftUI
 
 
 //Class
-private let harness = "https://mada.eecs.umich.edu"
+private let harness = "https://mada.eecs.umich.edu"  
 private let api = "/llmsearch"
 private let model = "gemma4:e4b"
 private let appID = Bundle.main.bundleIdentifier
